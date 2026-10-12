@@ -47,6 +47,23 @@ WHAT CHANGED vs. the original:
      RD/KRO breakdown -> Product breakup). The reference's 'Chls cont.'
      and '<5 lacs' columns on the Handholding table are still left out --
      no traceable definition for either yet.
+ 10. Number fixes after reviewing New_GEO_2026_YTD_Aug.xlsx:
+       - Geo Expansion's "YTD'25" columns (Snapshot, Handholding region,
+         RD/KRO) were really FY2025 full-year sales. FY'25 and true YTD'25
+         are now separate columns, and Handholding Grw % is YTD vs YTD.
+       - Partners with no Zone (city missing from Geography mapping) were
+         dropped from every region table, so rows didn't add up to Grand
+         Total. They now appear as an "Unmapped" region, and the missing
+         cities are printed.
+       - "New Partner's 2026 Sales" meant two different populations on
+         the two sheets; both labels now say which one.
+       - FY2025 sales buckets: ">5 lacs" -> "5-10 lacs", partners with no
+         FY2025 sales get their own "Nil in FY2025" bucket, and the table
+         is split by Policy Category.
+       - New Geo detection uses the Alias Mapping sheet to fold city
+         spelling variants, so they aren't reported as new geographies.
+       - Geo report file name follows the YTD month (was hardcoded "Aug");
+         29-Feb no longer crashes the last-year date.
 
 REQUIRES (unchanged from your original, not modified here):
   - df_Sales_final must already exist in scope before this script runs
@@ -72,13 +89,24 @@ import requests
 # =====================================================================
 TARGET_YEAR = 2026
 PREV_YEAR = 2025
-LOCAL_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "Partner_Analysis_2026_PTP_test3.xlsx")
-GEO_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "New_GEO_2026_YTD_Aug.xlsx")
-
 today = datetime.now()
 yesterday = today - timedelta(days=1)
-last_year_yesterday = yesterday.replace(year=PREV_YEAR)
-last_y_ytd_date = yesterday.replace(year=yesterday.year - 1)
+
+
+def same_day_in_year(dt, year):
+    # 29-Feb has no counterpart in a non-leap year -> fall back to 28-Feb
+    try:
+        return dt.replace(year=year)
+    except ValueError:
+        return dt.replace(year=year, day=28)
+
+
+last_year_yesterday = same_day_in_year(yesterday, PREV_YEAR)
+last_y_ytd_date = same_day_in_year(yesterday, yesterday.year - 1)
+
+LOCAL_OUTPUT_PATH = os.path.join(OUTPUT_DIR, "Partner_Analysis_2026_PTP_test3.xlsx")
+# File name follows the data's YTD cut-off month (was hardcoded "Aug")
+GEO_OUTPUT_PATH = os.path.join(OUTPUT_DIR, f"New_GEO_{TARGET_YEAR}_YTD_{yesterday.strftime('%b')}.xlsx")
 
 MONTHS_ORDER = [
     "January", "February", "March", "April", "May", "June",
@@ -140,6 +168,20 @@ df_region_target.columns = df_region_target.columns.str.strip()
 Partner_Master = Partner_Raw.merge(Geo_Map.drop_duplicates("City"), on="City", how="left")
 Partner_Master["Sold-to Party"] = Partner_Master["Sold-to Party"].astype(str).str.strip()
 
+# City key for New Geo detection only: spelling variants (e.g. Vishakhapatnam
+# vs Visakhapatnam) are folded via the Data Dictionary's "Alias Mapping" sheet
+# so a known city isn't reported as a new geography. The display/merge City
+# column is left untouched so the Geography mapping join above is unaffected.
+try:
+    Alias_Map = pd.read_excel(fetch_sp_file(drive_id, headers_auth, f"{BASE_MASTER_PATH}/Data Dictionary.xlsx"), sheet_name="Alias Mapping")
+    city_alias = dict(zip(Alias_Map["Old Name"].astype(str).str.strip().str.title(),
+                          Alias_Map["Standard Name"].astype(str).str.strip().str.title()))
+except Exception as e:
+    print(f"⚠️ Alias Mapping sheet not loaded ({e}); New Geo uses raw city names.")
+    city_alias = {}
+Partner_Master["Geo_City"] = Partner_Master["City"].astype(str).str.strip().str.title().replace(city_alias)
+Partner_Master.loc[Partner_Master["City"].isna(), "Geo_City"] = np.nan
+
 tier_col = next((c for c in Partner_Master.columns if "tier" in c.lower()), "Tier Category")
 tier_map = {"Metro": "Metro & T1", "T1": "Metro & T1", "T2&T3": "T2 & T3"}
 Partner_Master["Tier_Bucket"] = Partner_Master[tier_col].map(tier_map).fillna("Other")
@@ -181,7 +223,25 @@ partner_status.loc[override_idx, ["Stat_2026", "Stat_2025"]] = "Old"
 df_final = df_retail.merge(Partner_Master, left_on="SoldToPartyID", right_on="Sold-to Party", how="left")
 df_final = df_final.merge(partner_status, left_on="SoldToPartyID", right_index=True, how="left")
 
-geo_history = df_final.groupby(["City", "Year"])["Gross Sales"].sum().unstack(fill_value=0)
+# Partners whose City is missing from the Geography mapping (or who are
+# missing from Partner Master entirely) have no Zone. They used to be dropped
+# silently by every region table, so region rows didn't add up to the Grand
+# Total. Keep them visible as "Unmapped" and say which cities need mapping.
+UNMAPPED = "Unmapped"
+no_zone = df_final["Zone"].isna()
+if no_zone.any():
+    missing = df_final.loc[no_zone, ["SoldToPartyID", "City"]].drop_duplicates("SoldToPartyID")
+    print(f"⚠️ {len(missing)} partner(s) have no Zone -> shown as '{UNMAPPED}'. "
+          f"Add these cities to 'Geography mapping': {sorted(missing['City'].dropna().unique().tolist())}")
+df_final["Zone"] = df_final["Zone"].fillna(UNMAPPED)
+
+
+def unmapped_last(index_values):
+    vals = [v for v in index_values if v != UNMAPPED]
+    return vals + ([UNMAPPED] if UNMAPPED in index_values else [])
+
+
+geo_history = df_final.groupby(["Geo_City", "Year"])["Gross Sales"].sum().unstack(fill_value=0)
 is_new_geo = (geo_history.get(2026, 0) > 0) & (geo_history.get(2025, 0) == 0) & (geo_history.get(2024, 0) == 0)
 new_geo_list = geo_history[is_new_geo].index.tolist()
 is_new_geo_25 = (geo_history.get(2025, 0) > 0) & (geo_history.get(2024, 0) == 0) & (geo_history.get(2023, 0) == 0)
@@ -246,7 +306,7 @@ def aggregate_periods(group_col, is_segment=False, new_only=False, with_avg=Fals
 
     res = pd.concat([a25f, a25y, a26y], axis=1).fillna(0)
     res.columns = ["P25F", "S25F", "P25Y", "S25Y", "P26Y", "S26Y"]
-    return res
+    return res.loc[unmapped_last(sorted(res.index, key=str))]
 
 
 def write_kpi_table(ws, wb, f, start_row, res, title, label, with_avg=True):
@@ -362,7 +422,9 @@ def write_new_partner_dashboard(ws, wb, f, start_row=0):
 
     ws.write(r, 0, "Gross Total BU Target", f["kpi_label"]); ws.write(r, 1, bu_target_mn, f["kpi_value"]); r += 1
     ws.write(r, 0, f"Total YTD {yesterday.strftime('%b')} Sales", f["kpi_label"]); ws.write(r, 1, total_ytd_sales_mn, f["kpi_value"]); r += 1
-    ws.write(r, 0, "New Partner's 2026 Sales", f["kpi_label"]); ws.write(r, 1, total_new_sales, f["kpi_value"])
+    # Stat_2026 definition (first billed in 2026). The Geo Expansion sheet's
+    # figure is broader (adds Q4'25 + <5L'25 onboarded), so the labels differ.
+    ws.write(r, 0, "New Partner's 2026 Sales (New in 2026)", f["kpi_label"]); ws.write(r, 1, total_new_sales, f["kpi_value"])
     ws.merge_range(r, 2, r, 3, "New Partner's Sales %", f["hdr"]); r += 1
     ws.merge_range(r, 2, r, 3, new_pct, f["kpi_pct_hero"])
     r += 3
@@ -389,7 +451,7 @@ def write_new_partner_dashboard(ws, wb, f, start_row=0):
     partner_target_by_zone = NEW_PARTNER_TARGETS_BY_ZONE["Partner Count Target"]
     sales_target_by_zone = NEW_PARTNER_TARGETS_BY_ZONE["Gr.Sales Target"]
 
-    all_zones = sorted(set(partner_target_by_zone.index) | set(region_new.index))
+    all_zones = unmapped_last(sorted(set(partner_target_by_zone.index) | set(region_new.index)))
 
     for zone in all_zones:
         row = region_new.loc[zone] if zone in region_new.index else pd.Series({"P25Y": 0, "S25Y": 0, "P26Y": 0, "S26Y": 0})
@@ -446,9 +508,9 @@ def write_new_geo_table(ws, wb, f, start_row):
         ws.write(hdr_r, c, h, f["hdr"])
 
     geo_data = df_final[
-        (df_final["City"].isin(new_geo_list)) & (df_final["Year"] == TARGET_YEAR) & (df_final["InvoiceDate"] <= yesterday)
+        (df_final["Geo_City"].isin(new_geo_list)) & (df_final["Year"] == TARGET_YEAR) & (df_final["InvoiceDate"] <= yesterday)
     ]
-    geo_sum = geo_data.groupby("City").agg(P=("SoldToPartyID", "nunique"), S=("Gross Sales", lambda x: x.sum() / 1e6))
+    geo_sum = geo_data.groupby("Geo_City").agg(P=("SoldToPartyID", "nunique"), S=("Gross Sales", lambda x: x.sum() / 1e6))
 
     r = hdr_r + 1
     for idx, row in geo_sum.iterrows():
@@ -489,6 +551,7 @@ def write_helios_region_pivot(ws, wb, f, start_row, new_partners_only=False, tit
         return start_row + 2
 
     pivot = df_yr.pivot_table(index="Zone", columns="Helios_Display", values="Gross Sales", aggfunc="sum", fill_value=0) / 1e6
+    pivot = pivot.loc[unmapped_last(list(pivot.index))]
     pivot["Grand Total"] = pivot.sum(axis=1)
     pivot.loc["Grand Total"] = pivot.sum()
 
@@ -776,14 +839,17 @@ def generate_zone_target_tracker(writer, wb, f):
 # =====================================================================
 # 10b. Sheet1 + Geo Expansion (for the separate New_GEO report)
 # =====================================================================
-SALES_BUCKET_LABELS = [">10 lacs", ">5 lacs", "less than 5 lacs"]
+# ">5 lacs" really meant 5-10 lacs, and "less than 5 lacs" mixed partners who
+# billed <5L in 2025 with partners who billed nothing in 2025 (all the
+# "New Partner 2026" ones) -- those now get their own bucket.
+SALES_BUCKET_LABELS = [">10 lacs", "5-10 lacs", "<5 lacs", "Nil in FY2025"]
 
 
 def sales_bucket(sales_2025_fy):
     return np.select(
-        [sales_2025_fy >= 1_000_000, sales_2025_fy >= 500_000],
-        [SALES_BUCKET_LABELS[0], SALES_BUCKET_LABELS[1]],
-        default=SALES_BUCKET_LABELS[2],
+        [sales_2025_fy >= 1_000_000, sales_2025_fy >= 500_000, sales_2025_fy > 0],
+        [SALES_BUCKET_LABELS[0], SALES_BUCKET_LABELS[1], SALES_BUCKET_LABELS[2]],
+        default=SALES_BUCKET_LABELS[3],
     )
 
 
@@ -859,23 +925,28 @@ def write_geo_expansion_sheet(workbook, fmt, tracker, kro_col_name):
     r = 0
     ws.merge_range(r, 0, r, 3, f"New Partner Snapshot — YTD {yesterday.strftime('%b-%Y')}", fmt["title"]); r += 2
     ws.write(r, 0, "Description", fmt["hdr"])
+    # FIXED: the "YTD'25" column used to show FY2025 (full-year) sales.
+    # FY'25 and like-for-like YTD'25 are now separate columns.
     ws.write(r, 1, "No.of Partner", fmt["hdr"])
-    ws.write(r, 2, f"YTD {last_year_yesterday.strftime('%b').upper()}'25 (Mn)", fmt["hdr"])
-    ws.write(r, 3, f"YTD {yesterday.strftime('%b').upper()}'26 (Mn)", fmt["hdr"])
+    ws.write(r, 2, "FY'25 (Mn)", fmt["hdr"])
+    ws.write(r, 3, f"YTD {last_year_yesterday.strftime('%b').upper()}'25 (Mn)", fmt["hdr"])
+    ws.write(r, 4, f"YTD {yesterday.strftime('%b').upper()}'26 (Mn)", fmt["hdr"])
     r += 1
 
     def write_cat_row(label, mask, bold=False):
         nonlocal r
         n = int(mask.sum())
-        s25 = tracker.loc[mask, "Sales_2025_FY"].sum() / 1e6
+        s25_fy = tracker.loc[mask, "Sales_2025_FY"].sum() / 1e6
+        s25_ytd = tracker.loc[mask, "YTD_2025"].sum() / 1e6
         s26 = tracker.loc[mask, "YTD_2026"].sum() / 1e6
         f_int = fmt["tot_int"] if bold else fmt["int"]
         f_txt = fmt["tot_int"] if bold else fmt["txt_det"]
         f_num = fmt["tot_dec"] if bold else fmt["dec"]
         ws.write(r, 0, label, f_txt)
         ws.write(r, 1, n, f_int)
-        ws.write(r, 2, s25, f_num)
-        ws.write(r, 3, s26, f_num)
+        ws.write(r, 2, s25_fy, f_num)
+        ws.write(r, 3, s25_ytd, f_num)
+        ws.write(r, 4, s26, f_num)
         r += 1
 
     write_cat_row("Handholding partner", is_handholding_tracker, bold=True)
@@ -890,57 +961,67 @@ def write_geo_expansion_sheet(workbook, fmt, tracker, kro_col_name):
 
     ws.write(r, 0, "Gross Total BU Target", fmt["kpi_label"]); ws.write(r, 1, bu_target_mn, fmt["kpi_value"]); r += 1
     ws.write(r, 0, f"Total YTD {yesterday.strftime('%b')} Sales", fmt["kpi_label"]); ws.write(r, 1, total_ytd_sales_mn, fmt["kpi_value"]); r += 1
-    ws.write(r, 0, "New Partner's 2026 Sales", fmt["kpi_label"]); ws.write(r, 1, total_new_sales_ytd26, fmt["kpi_value"])
+    ws.write(r, 0, "New Partner's 2026 Sales (New'26 + Q4'25 + <5L'25)", fmt["kpi_label"]); ws.write(r, 1, total_new_sales_ytd26, fmt["kpi_value"])
     ws.write(r, 2, "New Partner's Sales %", fmt["hdr"]); r += 1
     ws.write(r, 2, total_new_sales_ytd26 / total_ytd_sales_mn if total_ytd_sales_mn else 0, fmt["kpi_pct_hero"])
     r += 3
 
     # --- C) Partners by FY2025 Sales Bucket ---------------------------
     ws.write(r, 0, "Partners by FY2025 Sales Bucket (Handholding + New Partner)", fmt["subtitle"]); r += 1
+    # Split by Policy Category so it's visible who sits in each bucket.
     bucketed = tracker.loc[is_new_partner_tracker | is_handholding_tracker].copy()
     bucketed["Bucket"] = sales_bucket(bucketed["Sales_2025_FY"])
-    bucket_counts = bucketed["Bucket"].value_counts().reindex(SALES_BUCKET_LABELS, fill_value=0)
-    ws.write(r, 0, "Bucket", fmt["hdr"]); ws.write(r, 1, "Partner Count", fmt["hdr"]); r += 1
-    for label, cnt in bucket_counts.items():
-        ws.write(r, 0, label, fmt["txt_det"]); ws.write(r, 1, int(cnt), fmt["int"]); r += 1
-    r += 2
+    bucket_cats = [HANDHOLDING_CAT] + NEW_PARTNER_SUBCATS
+    bucket_tbl = (pd.crosstab(bucketed["Bucket"], bucketed["Policy Category"])
+                  .reindex(index=SALES_BUCKET_LABELS, columns=bucket_cats, fill_value=0))
+    bucket_hdrs = ["Bucket", "Partner Count", "Handholding (>5L 2025 Onboarded)"] + NEW_PARTNER_SUBCATS
+    for c, h in enumerate(bucket_hdrs):
+        ws.write(r, c, h, fmt["hdr_wrap"])
+    ws.set_row(r, 30)
+    r += 1
+    for label, row in bucket_tbl.iterrows():
+        ws.write(r, 0, label, fmt["txt_det"])
+        ws.write(r, 1, int(row.sum()), fmt["int"])
+        for c, cat in enumerate(bucket_cats, start=2):
+            ws.write(r, c, int(row[cat]), fmt["int"])
+        r += 1
+    ws.write(r, 0, "Grand Total", fmt["tot_int"])
+    ws.write(r, 1, int(bucket_tbl.values.sum()), fmt["tot_int"])
+    for c, cat in enumerate(bucket_cats, start=2):
+        ws.write(r, c, int(bucket_tbl[cat].sum()), fmt["tot_int"])
+    r += 3
 
     # --- D) Handholding partner region breakdown -----------------------
-    # Region / Partner Count Target / YTD'25 / YTD'26 / Grw% for the
-    # Handholding bucket specifically. Header says "Partner Count Target"
-    # to match the reference file's own label exactly, even though the
-    # values are a partner COUNT, not a target (there's no per-zone
-    # Handholding target defined anywhere in this script, same as the
-    # reference -- its own numbers are counts under that header too).
+    # FIXED: "YTD'25" was FY2025 sales, so Grw % compared a full year with a
+    # part year. Growth is now YTD'26 vs YTD'25 (same cut-off date); FY'25 is
+    # shown separately. Column 2 is a partner COUNT, so it's labelled as one.
     # 'Chls cont.' and '<5 lacs' columns from the reference are still left
-    # out -- no traceable definition for either (see chat).
+    # out -- no traceable definition for either.
     ws.write(r, 0, "Handholding Partner — Region Breakdown", fmt["title"]); r += 1
     hh_tracker = tracker.loc[is_handholding_tracker]
-    headers_hh = ["Region", "Partner Count Target", f"YTD {last_year_yesterday.strftime('%b').upper()}'25 (Mn)",
-                  f"YTD {yesterday.strftime('%b').upper()}'26 (Mn)", "Grw %"]
+    headers_hh = ["Region", "Partner Count", "FY'25 (Mn)",
+                  f"YTD {last_year_yesterday.strftime('%b').upper()}'25 (Mn)",
+                  f"YTD {yesterday.strftime('%b').upper()}'26 (Mn)", "YTD Grw %"]
     for c, h in enumerate(headers_hh):
         ws.write(r, c, h, fmt["hdr"])
     r += 1
-    hh_zones = sorted(hh_tracker["Zone"].dropna().unique())
-    for zone in hh_zones:
-        sub = hh_tracker[hh_tracker["Zone"] == zone]
-        s25 = sub["Sales_2025_FY"].sum() / 1e6
+
+    def write_hh_row(label, sub, bold=False):
+        s25_fy = sub["Sales_2025_FY"].sum() / 1e6
+        s25_ytd = sub["YTD_2025"].sum() / 1e6
         s26 = sub["YTD_2026"].sum() / 1e6
-        gwt = (s26 - s25) / s25 if s25 else 0
-        ws.write(r, 0, zone, fmt["txt_det"])
-        ws.write(r, 1, len(sub), fmt["int"])
-        ws.write(r, 2, s25, fmt["dec"])
-        ws.write(r, 3, s26, fmt["dec"])
-        ws.write(r, 4, gwt, fmt["pct"])
+        gwt = (s26 - s25_ytd) / s25_ytd if s25_ytd else 0
+        ws.write(r, 0, label, fmt["tot_int"] if bold else fmt["txt_det"])
+        ws.write(r, 1, len(sub), fmt["tot_int"] if bold else fmt["int"])
+        ws.write(r, 2, s25_fy, fmt["tot_dec"] if bold else fmt["dec"])
+        ws.write(r, 3, s25_ytd, fmt["tot_dec"] if bold else fmt["dec"])
+        ws.write(r, 4, s26, fmt["tot_dec"] if bold else fmt["dec"])
+        ws.write(r, 5, gwt, fmt["tot_pct"] if bold else fmt["pct"])
+
+    for zone in unmapped_last(sorted(hh_tracker["Zone"].dropna().unique())):
+        write_hh_row(zone, hh_tracker[hh_tracker["Zone"] == zone])
         r += 1
-    hh_s25_tot = hh_tracker["Sales_2025_FY"].sum() / 1e6
-    hh_s26_tot = hh_tracker["YTD_2026"].sum() / 1e6
-    hh_gwt_tot = (hh_s26_tot - hh_s25_tot) / hh_s25_tot if hh_s25_tot else 0
-    ws.write(r, 0, "Grand Total", fmt["tot_int"])
-    ws.write(r, 1, len(hh_tracker), fmt["tot_int"])
-    ws.write(r, 2, hh_s25_tot, fmt["tot_dec"])
-    ws.write(r, 3, hh_s26_tot, fmt["tot_dec"])
-    ws.write(r, 4, hh_gwt_tot, fmt["tot_pct"])
+    write_hh_row("Grand Total", hh_tracker, bold=True)
     r += 3
 
     # --- E) New Partner Performance by Region — Target vs Actual (extended) --
@@ -963,7 +1044,7 @@ def write_geo_expansion_sheet(workbook, fmt, tracker, kro_col_name):
         ws.write(r, c, h, fmt["hdr_wrap"])
     ws.set_row(r, 30)
     r += 1
-    all_zones = sorted(set(NEW_PARTNER_TARGETS_BY_ZONE.index) | set(np_tracker["Zone"].dropna().unique()))
+    all_zones = unmapped_last(sorted(set(NEW_PARTNER_TARGETS_BY_ZONE.index) | set(np_tracker["Zone"].dropna().unique())))
     for zone in all_zones:
         sub = np_tracker[np_tracker["Zone"] == zone]
         ws.write(r, 0, zone, fmt["txt_det"])
@@ -1015,6 +1096,7 @@ def write_geo_expansion_sheet(workbook, fmt, tracker, kro_col_name):
     count_headers_kro = [f"{cat} (Count)" for cat in NEW_PARTNER_SUBCATS]
     sales_headers_kro = [f"{cat} (Mn)" for cat in NEW_PARTNER_SUBCATS]
     headers_kro = (["RD/KRO"] + count_headers_kro + sales_headers_kro + [
+        "FY '25 (Mn)",
         f"YTD {last_year_yesterday.strftime('%b').upper()} '25 (Mn)",
         f"YTD {yesterday.strftime('%b').upper()} '26 (Mn)",
     ])
@@ -1034,7 +1116,8 @@ def write_geo_expansion_sheet(workbook, fmt, tracker, kro_col_name):
             val = sub.loc[sub["Policy Category"] == cat, "YTD_2026"].sum() / 1e6
             ws.write(r, c, val, fmt["dec"])
         ws.write(r, 7, sub["Sales_2025_FY"].sum() / 1e6, fmt["dec"])
-        ws.write(r, 8, sub["YTD_2026"].sum() / 1e6, fmt["dec"])
+        ws.write(r, 8, sub["YTD_2025"].sum() / 1e6, fmt["dec"])
+        ws.write(r, 9, sub["YTD_2026"].sum() / 1e6, fmt["dec"])
         r += 1
     ws.write(r, 0, "Grand Total", fmt["tot_int"])
     for c, cat in enumerate(NEW_PARTNER_SUBCATS, start=1):
@@ -1043,7 +1126,8 @@ def write_geo_expansion_sheet(workbook, fmt, tracker, kro_col_name):
         val = kro_tracker.loc[kro_tracker["Policy Category"] == cat, "YTD_2026"].sum() / 1e6
         ws.write(r, c, val, fmt["tot_dec"])
     ws.write(r, 7, kro_tracker["Sales_2025_FY"].sum() / 1e6, fmt["tot_dec"])
-    ws.write(r, 8, kro_tracker["YTD_2026"].sum() / 1e6, fmt["tot_dec"])
+    ws.write(r, 8, kro_tracker["YTD_2025"].sum() / 1e6, fmt["tot_dec"])
+    ws.write(r, 9, kro_tracker["YTD_2026"].sum() / 1e6, fmt["tot_dec"])
     r += 3
 
     # --- H) Product-wise Break-up, New Partner (tracker) population ---
@@ -1127,8 +1211,8 @@ with pd.ExcelWriter(LOCAL_OUTPUT_PATH, engine="xlsxwriter") as writer:
     mask_25_ytd_new = (df_final["Stat_2025"] == "New/Revival") & (df_final["Year"] == 2025) & (df_final["InvoiceDate"] <= last_year_yesterday)
     write_detail(writer, workbook, fmt, df_final[mask_25_ytd_new].copy(), "New_Partner_Detail_2025_YTD", 2025)
 
-    write_detail(writer, workbook, fmt, df_final[df_final["City"].isin(new_geo_list)], "Geo_Expansion_Detail_2026", 2026)
-    write_detail(writer, workbook, fmt, df_final[df_final["City"].isin(new_geo_list_25)], "Geo_Expansion_Detail_2025", 2025)
+    write_detail(writer, workbook, fmt, df_final[df_final["Geo_City"].isin(new_geo_list)], "Geo_Expansion_Detail_2026", 2026)
+    write_detail(writer, workbook, fmt, df_final[df_final["Geo_City"].isin(new_geo_list_25)], "Geo_Expansion_Detail_2025", 2025)
 
     print("Generating Policy Tracker...")
     tracker = generate_policy_handholding_tracker(writer, workbook, fmt)

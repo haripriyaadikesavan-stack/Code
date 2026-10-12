@@ -29,3 +29,6 @@ Every workbook uses the house style in cell 0.5 (`THEME`): Calibri 10, dark-gree
 
 ## Duplicates in master data
 A key listed twice in a mapping sheet (a city in Geography mapping, a material in Material Master, a Sold-to Party in Partner Master) would copy every matching sales row in a join — in the notebook and in Tableau. The notebook keeps the first row of each key when it loads master data and stops a report if a join ever adds rows; the review file lists every duplicate so it can be removed from the source file (which is what protects Tableau).
+
+## Progress log
+Every message shows the clock time and time since the run started (`10:42:07 +03:15 │ …`). Each report logs `[n/total] ▶ name (last run 38s)` when it starts and `✅ done in …` / `❌ failed …` when it ends, plus every sheet being written (rows × columns) and every file saved/uploaded. The same log is written to `logs/Channel_Analytics_<date>_<time>.log` next to the notebook; `logs/report_timings.json` keeps each report's last duration.

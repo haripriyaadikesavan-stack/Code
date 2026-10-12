@@ -22,6 +22,7 @@ Switch reports on/off in `REPORTS` (cell 0.3). All shared settings — paths, ye
 | 6 | SSP performance |
 | 7 | Advanced analytics & ad-hoc tools (off by default) |
 | 8 | Archive — superseded code as raw cells (never executed) |
+| 9 | Master-data review (last code cell): unmapped cities, partners missing from Partner Master, unmapped Sales Offices, products missing from Material Master / without Family Actual → `Master_Data_Review_<date>.xlsx` |
 
 ## Report style
 Every workbook uses the house style in cell 0.5 (`THEME`): Calibri 10, dark-green headers, banded rows, frozen header, filters, bold totals, and the same number formats everywhere (₹ `#,##0`, ₹ Mn `#,##0.0`, `0.0%`, `dd-mmm-yyyy`). Data files read by Power BI / other reports keep their header on row 1.

@@ -64,6 +64,10 @@ WHAT CHANGED vs. the original:
          spelling variants, so they aren't reported as new geographies.
        - Geo report file name follows the YTD month (was hardcoded "Aug");
          29-Feb no longer crashes the last-year date.
+ 11. Partner_Policy_Tracker sheet is also written into the New GEO workbook
+     (after Geo Expansion), so the partner-level detail behind its numbers
+     travels with it. Calculation and sheet writing are now separate
+     (write_policy_tracker_sheet), so both workbooks get the same numbers.
 
 REQUIRES (unchanged from your original, not modified here):
   - df_Sales_final must already exist in scope before this script runs
@@ -699,7 +703,13 @@ def generate_policy_handholding_tracker(writer, wb, f):
     )
 
     tracker = tracker.sort_values(by="YTD_2026", ascending=False).reset_index()
+    write_policy_tracker_sheet(writer, wb, f, tracker)
+    return tracker
 
+
+def write_policy_tracker_sheet(writer, wb, f, tracker):
+    # Separate from the calculation so the same tracker can be written into
+    # both the Partner Analysis workbook and the New GEO workbook.
     final_cols = [
         "SoldToPartyID", "Patner", "Policy Category", "Old/New/Handholding",
         "Zone", "Branch", "ASM",
@@ -781,8 +791,6 @@ def generate_policy_handholding_tracker(writer, wb, f):
         "type": "data_bar",
         "bar_color": "#63C384",
     })
-
-    return tracker
 
 
 # =====================================================================
@@ -1247,6 +1255,10 @@ with pd.ExcelWriter(GEO_OUTPUT_PATH, engine="xlsxwriter") as geo_writer:
     ws_geo_new.set_column("B:L", 12)
 
     write_geo_expansion_sheet(geo_workbook, geo_fmt, tracker, kro_col)
+
+    # Partner-level detail behind every Geo Expansion number -- same tracker,
+    # same sheet layout as in the Partner Analysis workbook.
+    write_policy_tracker_sheet(geo_writer, geo_workbook, geo_fmt, tracker)
 
     # SSP sheet intentionally skipped -- no Branch/Distributor(SSA)
     # target+sales source is loaded in this script yet. Its tab would slot

@@ -5,7 +5,7 @@
 ## Running it
 1. Put `SP_TENANT_ID`, `SP_CLIENT_ID`, `SP_CLIENT_SECRET` in a `.env` file next to the notebook (never commit it).
 2. Run cell **0.1 Setup** once per machine.
-3. Run All. Cell **0.2** asks: `1` = use cached data (fast, nothing on SharePoint changes except the reports), `0` = check SharePoint for new data (full refresh, updates master data, saves a new cache). Set `CHANNEL_USE_CACHE=0/1` to skip the prompt.
+3. Run All. Cell **0.2** asks: `1` = use cached data — the local snapshot in `./local_cache/final_snapshot`, or if that does not exist yet the existing `parquet_cache` folders on SharePoint (no SAP refresh, nothing changes except the reports), `0` = check SharePoint for new data (full refresh, updates master data, saves a new cache). Set `CHANNEL_USE_CACHE=0/1` to skip the prompt.
 4. The **Run summary** cell at the end lists each report as ok / skipped / FAILED.
 
 Switch reports on/off in `REPORTS` (cell 0.3). All shared settings — paths, years, Retail filter, rebates, SSP map — live in that cell.

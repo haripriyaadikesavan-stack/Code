@@ -4,3 +4,6 @@ local_cache/
 local_cache_ob/
 __pycache__/
 .ipynb_checkpoints/
+*.twbx
+*.twb
+*.hyper

@@ -238,8 +238,19 @@ def main(src, out):
         d, used = dashboard(R, p, S)
         dbs.append(d)
         dash_used[p] = used
-    root.insert(list(root).index(ds_list) + 1, actions_xml(dash_used))
+    root.append(actions_xml(dash_used))
     root.append(windows_xml(S, dash_used))
+    # Tableau validates the order of the top-level elements
+    order = ["document-format-change-manifest", "repository-location", "preferences", "style-theme", "style",
+             "local-data", "datasources", "datasource-relationships", "mapsources", "shared-views", "actions",
+             "worksheets", "dashboards", "windows", "datagraph", "thumbnails", "external"]
+    rank = lambda e: next((i for i, t in enumerate(order) if str(e.tag) == t or str(e.tag).endswith("..." + t)), 99)
+    kids = sorted(list(root), key=rank)
+    if any(rank(k) == 99 for k in kids):
+        raise ValueError(f"unknown top-level element(s): {[k.tag for k in kids if rank(k) == 99]}")
+    for k in kids:
+        root.remove(k)
+        root.append(k)
 
     # ---- package: workbook + the primary extract only (the Pavilion extract is not used)
     twb = etree.tostring(tree, xml_declaration=True, encoding="utf-8", pretty_print=True)

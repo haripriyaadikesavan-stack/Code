@@ -27,6 +27,12 @@ def strip_strings(f):
 def main(path):
     root = etree.parse(path).getroot()
     errs, warns = [], []
+    order = ["document-format-change-manifest", "repository-location", "preferences", "style-theme", "style",
+             "local-data", "datasources", "datasource-relationships", "mapsources", "shared-views", "actions",
+             "worksheets", "dashboards", "windows", "datagraph", "thumbnails", "external"]
+    ranks = [next((i for i, t in enumerate(order) if str(c.tag) == t or str(c.tag).endswith("..." + t)), 99) for c in root]
+    if ranks != sorted(ranks) or 99 in ranks:
+        errs.append(f"top-level element order: {[c.tag for c in root]}")
     dsl = root.find("datasources")
     params = {c.get("name") for c in dsl.find("datasource[@name='Parameters']").findall("column")}
     ds = [d for d in dsl if d.get("name") != "Parameters"][0]

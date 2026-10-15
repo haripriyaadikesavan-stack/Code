@@ -15,6 +15,7 @@ All old calculations, sheets and dashboards are replaced.
 ```
 python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard.twbx"
 python validate.py "Retail Dashboard.twb"      # static checks on the generated XML
+python order_check.py "Retail Dashboard.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"   # element order / attributes vs real Tableau files
 ```
 
 Needs `lxml`. The `.twbx` / `.twb` / `.hyper` files contain business data and

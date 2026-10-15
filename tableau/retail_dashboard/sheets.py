@@ -175,7 +175,9 @@ class Sheet:
             style = style.replace(f"<style-rule element='{rule}'>", f"<style-rule element='{rule}'>{fmt}", 1)
         style = f"<style>{style}</style>"
 
-        enc = "".join(f"<{t} column='{r}' />" for t, r in self.encodings)
+        order = ["color", "size", "shape", "lod", "text", "tooltip"]
+        encs = sorted(self.encodings, key=lambda e: order.index(e[0]))
+        enc = "".join(f"<{t} column='{r}' />" for t, r in encs)
         enc = f"<encodings>{enc}</encodings>" if enc else ""
         label = f"<customized-label><formatted-text>{self.label}</formatted-text></customized-label>" if self.label else ""
         mstyle = ""

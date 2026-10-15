@@ -2,12 +2,12 @@
 import re
 
 from core import (DS, DS_CAPTIONS, C_BAND, C_DARK, C_HEAD_BG, C_MID, C_MUTED, C_TEXT,
-                  MERGE, OLD_CUR, attr, inst, inst_xml, iref, new_uuid, txt)
+                  attr, inst, inst_xml, iref, new_uuid, txt)
 
 MN = f"[{DS}].[:Measure Names]"
 MV = f"[{DS}].[Multiple Values]"
 
-UNITS_TOKEN = f"<[Parameters].[{OLD_CUR}]>" if MERGE else "<[Parameters].[p Units]>"
+UNITS_TOKEN = "<[Parameters].[p Units]>"
 
 
 def mn(ds):
@@ -229,6 +229,8 @@ class Sheet:
         cell = ""
         if self.cell_align:
             cell = f"<style-rule element='cell'><format attr='text-align' value='{self.cell_align}' /><format attr='vertical-align' value='center' /></style-rule>"
+            if self.kind == "story":
+                cell = cell.replace("</style-rule>", "<format attr='wrap' value='on' /></style-rule>")
         pane = (f"<pane selection-relaxation-option='selection-relaxation-allow'><view><breakdown value='auto' /></view>"
                 f"<mark class='{self.mark}' />{enc}{label}<style>{cell}<style-rule element='mark'>{mstyle}</style-rule></style></pane>")
         rows = f"<rows total='true'>{self.rows}</rows>" if (self.rows and self.rows_total) else (f"<rows>{self.rows}</rows>" if self.rows else "<rows />")

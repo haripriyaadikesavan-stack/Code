@@ -11,7 +11,8 @@ ORDER = ["document-format-change-manifest", "repository-location", "preferences"
          "worksheets", "dashboards", "windows", "datagraph", "thumbnails", "external"]
 # metadata parent-name (physical table / union) -> logical table
 LOGICAL = {"[Year+]": "P", "[Partner Master Data]": "P", "[Geography mapping]": "P", "[Sheet1]": "P", "[SSA Mapping]": "P",
-           "[Monthly Targets]": "T", "[QTOD - ATOD]": "Q", "[Branch Targets1]": "B", "[SSA Targets]": "S"}
+           "[Monthly Targets]": "T", "[QTOD - ATOD]": "Q", "[Branch Targets1]": "B", "[SSA Targets]": "S",
+           "[Partner Targets]": "PT", "[Pivot]": "PT", "[Pavilion Sales]": "V"}
 
 
 def strip_lod(f):
@@ -76,7 +77,11 @@ def main(path):
             seen.add(n)
             if n in calcs:
                 t = set()
-                for r in refs_of(calcs[n].find("calculation").get("formula")):
+                f = calcs[n].find("calculation").get("formula")
+                m = re.match(r"\s*\{FIXED ([^:]*):", f)
+                if m:      # a FIXED LOD lives at the level of its dimensions
+                    f = m.group(1)
+                for r in refs_of(f):
                     t |= tables(r, seen)
                 return t
             tb = meta.get(n)
@@ -99,7 +104,8 @@ def main(path):
             for p in params_of(f):
                 if p not in params:
                     errs.append(f"{cap}: unknown parameter {p}")
-            if len(tables(n)) > 1 and not is_agg(calcs, n):
+            # a FIXED LOD may combine related tables (as the old Partner Achievement Grouping did)
+            if len(tables(n)) > 1 and not is_agg(calcs, n) and not f.lstrip().startswith("{FIXED"):
                 errs.append(f"{cap}: row-level calc mixes tables {tables(n)}")
             outside = strip_lod(strip_strings(f))
             if "{" in f and AGG.search(outside) and re.search(r"(?<![A-Z(])LOD", outside) and not re.search(r"(MIN|MAX|SUM|AVG|ATTR)\(\s*LOD", outside):

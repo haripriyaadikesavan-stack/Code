@@ -9,7 +9,7 @@ Business rules (same conversions as the existing Retail workbook):
   * Partner targets (QTOD and ATOD file) are GROSS; net = gross x 0.83.
   * SSP (SSA) targets are used as they are, as in the old workbook.
 """
-from core import MERGE, OLD_CUR, OLD_END, OLD_GN, OLD_START, PDS, Registry
+from core import PDS, Registry
 
 GROSS_FACTOR = 0.83
 FMT_V, FMT_P, FMT_N = "n#,##0.0;-#,##0.0", "p0.0%", "n#,##0;-#,##0"
@@ -42,6 +42,22 @@ def build_model(branches, branch_zone, families, rls_rules):
     b("Helios Code", "string", "dimension", "nominal", "Activity (Helios)")
     b("MaterialCode", "string", "dimension", "nominal", "Material Code")
     b("MaterialDescription", "string", "dimension", "nominal", "Material")
+    b("Sold-to Party (Partner Master Data)", "string", "dimension", "nominal", "Partner Code")
+    b("SalesOrderHeader", "integer", "dimension", "nominal", "Sales Order")
+    b("SalesOrderItem", "string", "dimension", "nominal", "Order Item")
+    b("PlantName", "string", "dimension", "nominal", "Plant")
+    # ---- partner targets (Partner Targets sheet, pivoted by year; GROSS)
+    b("Pivot Field Names", "integer", "dimension", "ordinal", "Partner Target Year", table="PT")
+    b("Pivot Field Values", "real", "measure", "quantitative", "Partner Target (gross)", table="PT")
+    # ---- pavilion partners (Pavilion Sales sheet)
+    b("Name of RO/KRO", "string", "dimension", "nominal", "Pavilion Partner", table="V")
+    b("Branch (Pavilion Sales)", "string", "dimension", "nominal", "Pavilion Branch (file)", table="V")
+    b("Zone/Region", "string", "dimension", "nominal", "Pavilion Region (file)", table="V")
+    b("KRO/RO", "string", "dimension", "nominal", "Pavilion Type (KRO / RO)", table="V")
+    b("Active/Removed", "string", "dimension", "nominal", "Pavilion Status", table="V")
+    b("Sales Manager", "string", "dimension", "nominal", "Pavilion Sales Manager", table="V")
+    b("GSTIN no", "string", "dimension", "nominal", "Pavilion GSTIN", table="V")
+    b("2025 Target (Pavilion Sales)", "real", "measure", "quantitative", "Pavilion Target (file)", table="V")
     # ---- monthly targets (NET)
     b("Branch", "string", "dimension", "nominal", "Monthly Target Branch", table="T")
     b("Zone (Monthly Targets)", "string", "dimension", "nominal", "Monthly Target Region", table="T")
@@ -126,52 +142,38 @@ def build_model(branches, branch_zone, families, rls_rules):
 
     # ================================================================ params
     P = R.param
-    if MERGE:
-        # the existing workbook's own controls (definitions are taken from that workbook when merging)
-        P(OLD_START, "Start Date", "date", "2026-01-01")
-        P(OLD_END, "End Date", "date", "2026-10-14")
-        P(OLD_GN, "Gross / Net", "string", "Gross Sales", ["Gross Sales", "Net Sales"])
-        P(OLD_CUR, "Currency Selector", "string", "MINR", ["INR", "MINR"])
-    else:
-        P("p Period", "Period", "string", "YTD",
-          ["YTD", "QTD", "MTD", "Last month", "Full year", "Custom range"])
-        P("p Start", "Custom start", "date", "2026-01-01", rng=("2023-01-01", "2028-12-31", None))
-        P("p End", "Custom end", "date", "2026-12-31", rng=("2023-01-01", "2028-12-31", None))
-        P("p Measure", "Gross / Net", "string", "Gross", ["Gross", "Net"])
-        P("p Units", "Units", "string", "Mn", ["INR", "Lakh", "Mn", "Cr"])
+    P("p Period", "Period", "string", "YTD",
+      ["YTD", "QTD", "MTD", "Last month", "Full year", "Custom range"])
+    P("p Start", "Custom start", "date", "2026-01-01", rng=("2023-01-01", "2028-12-31", None))
+    P("p End", "Custom end", "date", "2026-12-31", rng=("2023-01-01", "2028-12-31", None))
+    P("p Measure", "Gross / Net", "string", "Gross", ["Gross", "Net"])
+    P("p Units", "Units", "string", "Mn", ["INR", "Lakh", "Mn", "Cr"])
     P("p Region", "Region", "string", "All", ["All", "East", "North", "South", "West1", "West2"])
     P("p Branch", "Branch", "string", "All", ["All"] + branches)
     P("p Family", "Family", "string", "All", ["All"] + families)
     P("p Channel", "Partner type", "string", "All", ["All", "RD", "KRO", "PD"])
+    P("p Activity", "Activity (FD / WD ...)", "string", "All", ["All", "HDCWD", "HDCFD", "HDCOS", "HDSPE", "PREVC"])
+    P("p Search", "Partner search (name or code)", "string", "")
     P("p Basis", "Monthly target basis", "string", "Full months", ["Full months", "Pro-rated to date"])
     P("p View", "Target view", "string", "Annual (100%)",
       ["Annual (100%)", "Annual (108%)", "Q1", "Q2", "Q3", "Q4", "Wiser", "Miluz Zeta"])
     P("p Dim", "Explore by", "string", "Branch",
       ["Region", "Branch", "ASM", "Partner", "Family", "Product classification", "Activity (Helios)",
-       "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter"])
+       "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter", "New product category", "Partner status"])
 
     C = R.calc
-    if MERGE:
-        PU, PM, GV, NV = f"[Parameters].[{OLD_CUR}]", f"[Parameters].[{OLD_GN}]", "Gross Sales", "Net Sales"
-    else:
-        PU, PM, GV, NV = "[Parameters].[p Units]", "[Parameters].[p Measure]", "Gross", "Net"
+    PU, PM, GV, NV = "[Parameters].[p Units]", "[Parameters].[p Measure]", "Gross", "Net"
 
     # ================================================================ parameter-only helpers
-    if MERGE:
-        C("Units divisor", f"IF {PU} = 'MINR' THEN 1000000 ELSE 1 END")
-        C("Period start", f"DATE([Parameters].[{OLD_START}])", "date")
-        C("Period end", f"DATE([Parameters].[{OLD_END}])", "date")
-    else:
-        C("Units divisor", f"CASE {PU} WHEN 'INR' THEN 1 WHEN 'Lakh' THEN 100000 WHEN 'Mn' THEN 1000000 WHEN 'Cr' THEN 10000000 ELSE 1000000 END")
-    if not MERGE:
-      C("Period start", "DATE(CASE [Parameters].[p Period] "
+    C("Units divisor", f"CASE {PU} WHEN 'INR' THEN 1 WHEN 'Lakh' THEN 100000 WHEN 'Mn' THEN 1000000 WHEN 'Cr' THEN 10000000 ELSE 1000000 END")
+    C("Period start", "DATE(CASE [Parameters].[p Period] "
       "WHEN 'YTD' THEN DATETRUNC('year', TODAY()) "
       "WHEN 'QTD' THEN DATETRUNC('quarter', TODAY()) "
       "WHEN 'MTD' THEN DATETRUNC('month', TODAY()) "
       "WHEN 'Last month' THEN DATEADD('month', -1, DATETRUNC('month', TODAY())) "
       "WHEN 'Full year' THEN DATETRUNC('year', TODAY()) "
       "ELSE [Parameters].[p Start] END)", "date")
-      C("Period end", "DATE(CASE [Parameters].[p Period] "
+    C("Period end", "DATE(CASE [Parameters].[p Period] "
       "WHEN 'Last month' THEN DATEADD('day', -1, DATETRUNC('month', TODAY())) "
       "WHEN 'Full year' THEN DATEADD('day', -1, DATEADD('year', 1, DATETRUNC('year', TODAY()))) "
       "WHEN 'Custom range' THEN [Parameters].[p End] "
@@ -196,7 +198,8 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("In filter scope",
       "([Parameters].[p Branch] = 'All' OR [Branch (Geography mapping)] = [Parameters].[p Branch]) "
       "AND ([Parameters].[p Family] = 'All' OR [Family Actual (Sheet1)] = [Parameters].[p Family]) "
-      "AND ([Parameters].[p Channel] = 'All' OR [RD/KRO] = [Parameters].[p Channel])", "boolean")
+      "AND ([Parameters].[p Channel] = 'All' OR [RD/KRO] = [Parameters].[p Channel]) "
+      "AND ([Parameters].[p Activity] = 'All' OR [Helios Code] = [Parameters].[p Activity])", "boolean")
     C("Is sale in period", "[Type] = 'Sales' AND {{In filter scope}} AND DATE([InvoiceDate]) >= {{Period start}} AND DATE([InvoiceDate]) <= {{Period end}}", "boolean")
     C("Is sale in PY period", "[Type] = 'Sales' AND {{In filter scope}} AND DATE([InvoiceDate]) >= {{PY start}} AND DATE([InvoiceDate]) <= {{PY end}}", "boolean")
     C("Is OB in period", "[Type] = 'OB' AND {{In filter scope}} AND [Calendar Day] >= {{Period start}} AND [Calendar Day] <= {{Period end}}", "boolean")
@@ -215,6 +218,7 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("OB yesterday (row)", "IF [Type] = 'OB' AND {{In filter scope}} AND [Calendar Day] = DATEADD('day', -1, TODAY()) THEN {{Value}} END", fmt=FMT_V)
     C("Backlog (row)", "IF [Type] = 'Backlog' AND {{In filter scope}} THEN {{Value}} END", fmt=FMT_V)
     C("Qty CY (row)", "IF {{Is sale in period}} THEN [BillingQuantity] END", "integer", fmt=FMT_N)
+    C("Qty PY (row)", "IF {{Is sale in PY period}} THEN [BillingQuantity] END", "integer", fmt=FMT_N)
     C("Active partner CY (row)", "IF {{Is sale in period}} AND [Gross Sales] <> 0 THEN [SoldToPartyID] END", "string")
     C("Active partner PY (row)", "IF {{Is sale in PY period}} AND [Gross Sales] <> 0 THEN [SoldToPartyID] END", "string")
     C("Active partner MTD (row)", "IF {{Is sale MTD}} AND [Gross Sales] <> 0 THEN [SoldToPartyID] END", "string")
@@ -238,10 +242,10 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("Backlog age (days)", "IF [Type] = 'Backlog' THEN DATEDIFF('day', [OrderCreationDate], TODAY()) END", "integer", fmt=FMT_N)
     C("Backlog ageing",
       "IF [Type] <> 'Backlog' THEN NULL "
-      "ELSEIF {{Backlog age (days)}} <= 30 THEN '1. 0-30 days' "
-      "ELSEIF {{Backlog age (days)}} <= 60 THEN '2. 31-60 days' "
-      "ELSEIF {{Backlog age (days)}} <= 90 THEN '3. 61-90 days' "
-      "ELSE '4. Over 90 days' END", "string")
+      "ELSEIF {{Backlog age (days)}} < 20 THEN '1. Under 20 days' "
+      "ELSEIF {{Backlog age (days)}} <= 50 THEN '2. 20-50 days' "
+      "ELSEIF {{Backlog age (days)}} <= 100 THEN '3. 51-100 days' "
+      "ELSE '4. Over 100 days' END", "string")
     C("Wiser sales CY (row)", "IF {{Is sale in period}} AND [Family Actual (Sheet1)] = 'Wiser' THEN {{Value}} END", fmt=FMT_V)
     C("Zeta sales CY (row)", "IF {{Is sale in period}} AND [Family Actual (Sheet1)] = 'Miluz Zeta' THEN {{Value}} END", fmt=FMT_V)
     C("Wiser sales MTD (row)", "IF {{Is sale MTD}} AND [Family Actual (Sheet1)] = 'Wiser' THEN {{Value}} END", fmt=FMT_V)
@@ -251,6 +255,38 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("SSA group", "IF ISNULL([SSA]) OR [SSA] = 'No SSA' THEN 'Without SSP' ELSE 'With SSP' END", "string")
     C("SSA sales CY (row)", "IF {{Is sale in period}} AND {{SSA group}} = 'With SSP' THEN {{Value}} END", fmt=FMT_V)
     C("SSA sales PY (row)", "IF {{Is sale in PY period}} AND {{SSA group}} = 'With SSP' THEN {{Value}} END", fmt=FMT_V)
+    # ---- v4: three-year view, product groups, reach, partner health, orders
+    C("PY2 start", "DATEADD('year', -2, {{Period start}})", "date")
+    C("PY2 end", "DATEADD('year', -2, {{Period end}})", "date")
+    C("Sales PY2 (row)", "IF [Type] = 'Sales' AND {{In filter scope}} AND DATE([InvoiceDate]) >= {{PY2 start}} AND DATE([InvoiceDate]) <= {{PY2 end}} THEN {{Value}} END", fmt=FMT_V)
+    C("New product category", "IF CONTAINS([Family Actual (Sheet1)], 'Miluz Zeta') THEN 'Miluz Zeta' ELSEIF CONTAINS([Family Actual (Sheet1)], 'Wiser') THEN 'Wiser' ELSE 'Other families' END", "string")
+    C("City first sale", "{FIXED [City (Geography mapping)] : MIN(IF [Type] = 'Sales' AND [Gross Sales] > 0 THEN DATE([InvoiceDate]) END)}", "date")
+    C("New city (row)", "IF {{Is sale in period}} AND [Gross Sales] <> 0 AND {{City first sale}} >= DATE(DATETRUNC('year', {{Period start}})) THEN [City (Geography mapping)] END", "string")
+    C("Active city (row)", "IF {{Is sale in period}} AND [Gross Sales] <> 0 THEN [City (Geography mapping)] END", "string")
+    C("Partner sales PY (INR)", "{FIXED [SoldToPartyID] : SUM(IF {{Is sale in PY period}} THEN {{Sales value (INR)}} END)}")
+    C("Lapsed partner (row)", "IF (ISNULL({{Partner sales in period (INR)}}) OR {{Partner sales in period (INR)}} <= 0) AND {{Partner sales PY (INR)}} > 0 THEN [SoldToPartyID] END", "string")
+    C("Partner in scope",
+      "{{Region selected}} AND ([Parameters].[p Branch] = 'All' OR [Branch (Geography mapping)] = [Parameters].[p Branch]) "
+      "AND ([Parameters].[p Channel] = 'All' OR [RD/KRO] = [Parameters].[p Channel])", "boolean")
+    C("Partner search match",
+      "[Parameters].[p Search] = '' OR CONTAINS(LOWER({{Partner}}), LOWER(TRIM([Parameters].[p Search])))", "boolean")
+    C("Sale date (row)", "IF [Type] = 'Sales' AND {{In filter scope}} AND [Gross Sales] > 0 THEN DATE([InvoiceDate]) END", "date")
+    C("Order", "STR([SalesOrderHeader])", "string")
+    C("Order date", "IF [Type] = 'Backlog' THEN STR([OrderCreationDate]) END", "string")
+    C("Region sales CY (lod)", "{FIXED [Zone] : SUM({{Sales CY (row)}})}")
+    C("Region sales PY (lod)", "{FIXED [Zone] : SUM({{Sales PY (row)}})}")
+    C("Region growth (lod)", "IF {{Region sales PY (lod)}} > 0 THEN {{Region sales CY (lod)}} / {{Region sales PY (lod)}} - 1 END")
+    C("Top region (row)", "IF {{Region sales CY (lod)}} = {FIXED : MAX({{Region sales CY (lod)}})} THEN {{Region}} END", "string")
+    C("Fastest region (row)", "IF {{Region growth (lod)}} = {FIXED : MAX({{Region growth (lod)}})} THEN {{Region}} END", "string")
+    C("Branch sales CY (lod)", "{FIXED [Branch (Geography mapping)] : SUM({{Sales CY (row)}})}")
+    C("Branch sales PY (lod)", "{FIXED [Branch (Geography mapping)] : SUM({{Sales PY (row)}})}")
+    C("Branch growth (lod)", "IF {{Branch sales PY (lod)}} > 0 THEN {{Branch sales CY (lod)}} / {{Branch sales PY (lod)}} - 1 END")
+    C("Top branch (row)", "IF {{Branch sales CY (lod)}} = {FIXED : MAX({{Branch sales CY (lod)}})} THEN {{Branch}} END", "string")
+    C("Fastest branch (row)", "IF {{Branch growth (lod)}} = {FIXED : MAX({{Branch growth (lod)}})} THEN {{Branch}} END", "string")
+    C("Slowest branch (row)", "IF {{Branch growth (lod)}} = {FIXED : MIN({{Branch growth (lod)}})} THEN {{Branch}} END", "string")
+    C("Family sales CY (lod)", "{FIXED [Family Actual (Sheet1)] : SUM({{Sales CY (row)}})}")
+    C("Family sales PY (lod)", "{FIXED [Family Actual (Sheet1)] : SUM({{Sales PY (row)}})}")
+    C("Top family (row)", "IF {{Family sales CY (lod)}} = {FIXED : MAX({{Family sales CY (lod)}})} THEN {{Family}} END", "string")
     C("Explore by",
       "CASE [Parameters].[p Dim] "
       "WHEN 'Region' THEN {{Region}} WHEN 'Branch' THEN {{Branch}} "
@@ -259,7 +295,8 @@ def build_model(branches, branch_zone, families, rls_rules):
       "WHEN 'Activity (Helios)' THEN IFNULL([Helios Code], 'Unmapped') WHEN 'Tier' THEN IFNULL([Tier Category], 'Unmapped') "
       "WHEN 'Partner type' THEN IFNULL([RD/KRO], 'Unmapped') WHEN 'SSP / SSA' THEN IFNULL([SSA], 'Unmapped') "
       "WHEN 'City' THEN IFNULL([City (Geography mapping)], 'Unmapped') WHEN 'Month' THEN {{Month}} "
-      "WHEN 'Quarter' THEN {{Quarter}} END", "string")
+      "WHEN 'Quarter' THEN {{Quarter}} WHEN 'New product category' THEN {{New product category}} "
+      "WHEN 'Partner status' THEN {{Partner status}} END", "string")
     # TvA view: achievement matching the selected partner-target view
     C("View sales (row)",
       "CASE [Parameters].[p View] WHEN 'Q1' THEN {{Sales Q1 (row)}} WHEN 'Q2' THEN {{Sales Q2 (row)}} "
@@ -270,7 +307,8 @@ def build_model(branches, branch_zone, families, rls_rules):
     # ================================================================ monthly targets (table T, net)
     C("Target branch", "CASE [Branch] WHEN 'NCR(DEL+ROH)' THEN 'NCR' WHEN 'NCR(NOI+GHAZ)' THEN 'NOIDA-GHZ' ELSE [Branch] END", "string")
     C("Target in scope",
-      "([Parameters].[p Branch] = 'All' OR {{Target branch}} = [Parameters].[p Branch]) AND [Parameters].[p Channel] = 'All'", "boolean")
+      "([Parameters].[p Branch] = 'All' OR {{Target branch}} = [Parameters].[p Branch]) AND [Parameters].[p Channel] = 'All' "
+      "AND [Parameters].[p Activity] = 'All'", "boolean")
     C("Target month start", "DATE(DATETRUNC('month', [Month and year]))", "date")
     C("Target month end", "DATEADD('day', -1, DATEADD('month', 1, {{Target month start}}))", "date")
     C("Target overlap days",
@@ -294,7 +332,7 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("Yearly target (row)",
       "IF [Year (Branch Targets1)] = YEAR({{Period end}}) "
       "AND ([Parameters].[p Branch] = 'All' OR [Branch (Branch Targets1)] = [Parameters].[p Branch]) "
-      "AND [Parameters].[p Family] = 'All' AND [Parameters].[p Channel] = 'All' "
+      "AND [Parameters].[p Family] = 'All' AND [Parameters].[p Channel] = 'All' AND [Parameters].[p Activity] = 'All' "
       "THEN [Target (Branch Targets1)] * {{Net to gross}} / {{Units divisor}} END", fmt=FMT_V)
 
     # ================================================================ SSP targets (table S, as is)
@@ -321,6 +359,33 @@ def build_model(branches, branch_zone, families, rls_rules):
       "WHEN 'Q2' THEN FLOAT([Qtr 2 Target]) WHEN 'Q3' THEN FLOAT([Qtr 3 Target]) WHEN 'Q4' THEN FLOAT([Qtr 4 Target]) "
       "WHEN 'Wiser' THEN [Wiser Target] WHEN 'Miluz Zeta' THEN [Zeta Target] ELSE [Target 100%] END) "
       "* {{Gross to net}} / {{Units divisor}} END", fmt=FMT_V)
+
+    # ================================================================ partner targets (Partner Targets sheet, gross; as the old Partner Ach%)
+    C("Partner FY target (row)",
+      "IF [Pivot Field Names] = YEAR({{Period end}}) AND [Parameters].[p Family] = 'All' AND [Parameters].[p Activity] = 'All' "
+      "THEN [Pivot Field Values] * {{Gross to net}} / {{Units divisor}} END", fmt=FMT_V)
+    # partner-level achievement (sales and target meet through the Sold-to Party relationship)
+    C("Partner FY ach (lod)", "{FIXED [SoldToPartyID] : SUM({{Sales CY (row)}}) / SUM({{Partner FY target (row)}})}", fmt=FMT_P)
+    C("Partner ach band",
+      "IF ISNULL({{Partner FY ach (lod)}}) THEN '7. No target' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 1 THEN '1. 100% and above' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.75 THEN '2. 75-100%' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.5 THEN '3. 50-75%' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.25 THEN '4. 25-50%' "
+      "ELSEIF {{Partner FY ach (lod)}} > 0 THEN '5. Below 25%' ELSE '6. No sales' END", "string")
+
+    # ================================================================ pavilion partners (Pavilion Sales sheet)
+    C("Pavilion region",
+      "CASE UPPER(TRIM([Zone/Region])) WHEN 'NORTH' THEN 'North' WHEN 'SOUTH' THEN 'South' WHEN 'EAST 1' THEN 'East' "
+      "WHEN 'EAST 2' THEN 'East' WHEN 'WEST 1' THEN 'West1' WHEN 'WEST 2' THEN 'West2' ELSE [Zone/Region] END", "string")
+    C("Pavilion branch",
+      "CASE UPPER(TRIM([Branch (Pavilion Sales)])) WHEN 'TN1' THEN 'TN-1' WHEN 'TN2' THEN 'TN-2' "
+      "ELSE UPPER(TRIM([Branch (Pavilion Sales)])) END", "string")
+    C("Pavilion in scope",
+      "[Active/Removed] = 'Active' AND ([Parameters].[p Region] = 'All' OR {{Pavilion region}} = [Parameters].[p Region]) "
+      "AND ([Parameters].[p Branch] = 'All' OR {{Pavilion branch}} = [Parameters].[p Branch])", "boolean")
+    C("Pavilion target (row)", "IF {{Pavilion in scope}} THEN [2025 Target (Pavilion Sales)] / {{Units divisor}} END", fmt=FMT_V)
+    C("Pavilion partner (row)", "IF {{Pavilion in scope}} THEN [GSTIN no] END", "string")
 
     # ================================================================ row-level security (from the 'Branch RLS' user filter)
     def rls_expr(field):
@@ -370,13 +435,15 @@ def build_model(branches, branch_zone, families, rls_rules):
     growth("OB growth %", "{{OB CY (row)}}", "{{OB PY (row)}}")
     pct("Sales to OB %", "{{Sales CY (row)}}", "{{OB CY (row)}}")
     A("Backlog", "SUM({{Backlog (row)}})")
-    A("Backlog over 60 days", "SUM(IF {{Backlog age (days)}} > 60 THEN {{Backlog (row)}} END)")
+    A("Backlog over 50 days", "SUM(IF {{Backlog age (days)}} > 50 THEN {{Backlog (row)}} END)")
     A("Active partners", "COUNTD({{Active partner CY (row)}})", "integer", FMT_N)
     A("Active partners PY", "COUNTD({{Active partner PY (row)}})", "integer", FMT_N)
     A("New / revival partners", "COUNTD(IF {{Partner status}} = 'New / Revival' THEN {{Active partner CY (row)}} END)", "integer", FMT_N)
     A("New partner sales", "SUM(IF {{Partner status}} = 'New / Revival' THEN {{Sales CY (row)}} END)")
     A("Sales per partner", "IF COUNTD({{Active partner CY (row)}}) > 0 THEN SUM({{Sales CY (row)}}) / COUNTD({{Active partner CY (row)}}) END")
     A("Quantity", "SUM({{Qty CY (row)}})", "integer", FMT_N)
+    A("Quantity PY", "SUM({{Qty PY (row)}})", "integer", FMT_N)
+    growth("Quantity growth %", "{{Qty CY (row)}}", "{{Qty PY (row)}}")
     A("Wiser sales", "SUM({{Wiser sales CY (row)}})")
     A("Zeta sales", "SUM({{Zeta sales CY (row)}})")
     A("Wiser target", "SUM({{Wiser target (row)}})")
@@ -424,6 +491,71 @@ def build_model(branches, branch_zone, families, rls_rules):
     A("SSP sales PY", "SUM({{SSA sales PY (row)}})")
     pct("SSP Ach %", "{{SSA sales CY (row)}}", "{{SSP target (row)}}")
     growth("SSP growth %", "{{SSA sales CY (row)}}", "{{SSA sales PY (row)}}")
+
+    # ---- v4 aggregates
+    A("Sales 2 years ago", "SUM({{Sales PY2 (row)}})")
+    A("Lapsed partners", "COUNTD({{Lapsed partner (row)}})", "integer", FMT_N)
+    A("New cities", "COUNTD({{New city (row)}})", "integer", FMT_N)
+    A("Active cities", "COUNTD({{Active city (row)}})", "integer", FMT_N)
+    A("Days since last sale", "DATEDIFF('day', MAX({{Sale date (row)}}), TODAY())", "integer", FMT_N)
+    A("Backlog age (max days)", "MAX({{Backlog age (days)}})", "integer", FMT_N)
+    A("Partner FY target", "SUM({{Partner FY target (row)}})")
+    pct("Partner FY Ach %", "{{Sales CY (row)}}", "{{Partner FY target (row)}}")
+    A("Partner FY balance", "SUM({{Partner FY target (row)}}) - SUM({{Sales CY (row)}})")
+    A("Partners in band", "COUNTD([SoldToPartyID])", "integer", FMT_N)
+    A("Partners at 100%+", "COUNTD(IF {{Partner ach band}} = '1. 100% and above' THEN [SoldToPartyID] END)", "integer", FMT_N)
+    A("Partners with target", "COUNTD(IF NOT ISNULL({{Partner FY ach (lod)}}) THEN [SoldToPartyID] END)", "integer", FMT_N)
+    A("Pavilions", "COUNTD({{Pavilion partner (row)}})", "integer", FMT_N)
+    A("Pavilion target", "SUM({{Pavilion target (row)}})")
+    pct("Pavilion Ach %", "{{Sales CY (row)}}", "{{Pavilion target (row)}}")
+    A("Has pavilion", "SUM(IF {{Pavilion in scope}} THEN 1 END)", "integer", FMT_N)
+    pct("With-SSP share %", "{{SSA sales CY (row)}}", "{{Sales CY (row)}}")
+    A("Year gone %", "DATEDIFF('day', DATETRUNC('year', MIN({{Period end}})), MIN({{Period end}})) / 365", fmt=FMT_P)
+
+    # ---- story headlines (one sentence per chapter, computed from the current filters)
+    N = lambda x: f"IFNULL(STR(ROUND({x}, 1)), '-')"
+    P = lambda x: f"IFNULL(STR(ROUND({x} * 100, 1)) + '%', 'n/a')"
+    G = lambda x: f"IFNULL((IF {x} >= 0 THEN '+' ELSE '' END) + STR(ROUND({x} * 100, 1)) + '%', 'n/a')"
+    U = "' ' + [Parameters].[p Units]"
+    S("Story | Overview",
+      f"'Sales are ' + {N('{{Sales}}')} + {U} + ', ' + {G('{{Growth %}}')} + ' on the same period last year. '"
+      f" + 'They are ' + {P('{{Ach %}}')} + ' of the monthly targets for the period and ' + {P('{{Yearly Ach %}}')}"
+      f" + ' of the yearly target, with ' + {P('{{Year gone %}}')} + ' of the year gone. '"
+      f" + IF {{{{Required run-rate / month}}}} > {{{{Current run-rate / month}}}} THEN 'To reach the yearly target the monthly run-rate has to rise from ' + {N('{{Current run-rate / month}}')} + ' to ' + {N('{{Required run-rate / month}}')} + {U} + '.'"
+      f" ELSE 'At the current run-rate of ' + {N('{{Current run-rate / month}}')} + {U} + ' a month the yearly target is on track.' END")
+    S("Story | Regions",
+      f"'Largest region: ' + IFNULL(MAX({{{{Top region (row)}}}}), '-') + ' with ' + {P('MAX({{Region sales CY (lod)}}) / SUM({{Sales CY (row)}})')} + ' of sales. '"
+      f" + 'Fastest growth: ' + IFNULL(MAX({{{{Fastest region (row)}}}}), '-') + ' (' + {G('MAX({{Region growth (lod)}})')} + '). '"
+      f" + STR(COUNTD(IF {{{{Region growth (lod)}}}} > 0 THEN [Zone] END)) + ' of ' + STR(COUNTD(IF {{{{Region sales CY (lod)}}}} > 0 THEN [Zone] END)) + ' regions are growing. Click a region in the scorecard to filter the page.'")
+    S("Story | Branches",
+      f"STR(COUNTD(IF {{{{Branch growth (lod)}}}} > 0 THEN [Branch (Geography mapping)] END)) + ' of ' + STR(COUNTD(IF {{{{Branch sales CY (lod)}}}} > 0 THEN [Branch (Geography mapping)] END)) + ' branches are growing. '"
+      f" + 'Largest: ' + IFNULL(MAX({{{{Top branch (row)}}}}), '-') + ' (' + {P('MAX({{Branch sales CY (lod)}}) / SUM({{Sales CY (row)}})')} + ' of sales). '"
+      f" + 'Fastest growth: ' + IFNULL(MAX({{{{Fastest branch (row)}}}}), '-') + ' (' + {G('MAX({{Branch growth (lod)}})')} + '); weakest: ' + IFNULL(MAX({{{{Slowest branch (row)}}}}), '-') + ' (' + {G('MIN({{Branch growth (lod)}})')} + '). Click a branch to see its ASMs.'")
+    S("Story | Products",
+      f"'Top family: ' + IFNULL(MAX({{{{Top family (row)}}}}), '-') + ' with ' + {P('MAX({{Family sales CY (lod)}}) / SUM({{Sales CY (row)}})')} + ' of sales. '"
+      f" + 'Wiser: ' + {N('{{Wiser sales}}')} + {U} + ' (' + {P('{{Wiser Ach %}}')} + ' of target); Miluz Zeta: ' + {N('{{Zeta sales}}')} + {U} + ' (' + {P('{{Zeta Ach %}}')} + ' of target).'")
+    S("Story | Partners",
+      f"STR({{{{Active partners}}}}) + ' partners bought in the period (' + STR({{{{Active partners PY}}}}) + ' in the same period last year). '"
+      f" + STR({{{{New / revival partners}}}}) + ' are new or revived and ' + STR({{{{Lapsed partners}}}}) + ' bought last year but not this year. '"
+      f" + 'Average sales per partner: ' + {N('{{Sales per partner}}')} + {U} + '. ' + STR({{{{Partners at 100%+}}}}) + ' of ' + STR({{{{Partners with target}}}}) + ' partners with a target are at 100% or more.'")
+    S("Story | All partners",
+      "'Every partner with sales, orders or backlog in the period or last year: ' + STR(COUNTD(IF {{Has activity}} = 1 THEN [SoldToPartyID] END)) + ' partners. '"
+      " + 'Type a name or code in Partner search to find one; click a column header to sort.'")
+    S("Story | Targets",
+      f"'Monthly-target achievement: ' + {P('{{Ach %}}')} + ' (gap ' + {N('{{Gap to target}}')} + {U} + '). Yearly target: ' + {P('{{Yearly Ach %}}')} + ' achieved, '"
+      f" + {N('{{Balance to yearly target}}')} + {U} + ' to go. Partner targets: ' + {P('{{Partner FY Ach %}}')} + ' achieved overall.'")
+    S("Story | SSP",
+      f"'Partners with an SSP bring ' + {P('{{With-SSP share %}}')} + ' of sales; SSP sales are ' + {G('{{SSP growth %}}')} + ' on last year and ' + {P('{{SSP Ach %}}')} + ' of SSP targets. '"
+      f" + STR({{{{Active cities}}}}) + ' cities bought in the period, ' + STR({{{{New cities}}}}) + ' of them for the first time.'")
+    S("Story | Pavilion",
+      f"STR({{{{Pavilions}}}}) + ' active pavilion partners in the Pavilion Sales file, with a target of ' + {N('{{Pavilion target}}')} + {U} + '. '"
+      f" + 'Their primary purchases (matched by GSTIN) are ' + {N('{{Sales}}')} + {U} + ' (' + {P('{{Pavilion Ach %}}')} + ' of target). ROs buy through distributors, so their sales show only in EazyDMS secondary data.'")
+    S("Story | MTD",
+      f"'Month to date: ' + {N('{{MTD sales}}')} + {U} + ', ' + {G('{{MTD growth %}}')} + ' on the same days last year and ' + {P('{{MTD Ach %}}')} + ' of the target for this month. '"
+      f" + 'Yesterday: ' + {N('{{Sales yesterday}}')} + {U} + ' sales and ' + {N('{{OB yesterday}}')} + {U} + ' orders.'")
+    S("Story | Orders",
+      f"'Order book: ' + {N('{{OB}}')} + {U} + ' (' + {G('{{OB growth %}}')} + ' on last year); sales are ' + {P('{{Sales to OB %}}')} + ' of it. '"
+      f" + 'Open backlog: ' + {N('{{Backlog}}')} + {U} + ', of which ' + {P('{{Backlog over 50 days}} / {{Backlog}}')} + ' is older than 50 days.'")
 
     # ================================================================ Pavilion (summary tables, as published)
     PC = lambda cap, f, dt="real", fmt=FMT_N: C(cap, f, dt, role="measure", fmt=fmt, ds=PDS)

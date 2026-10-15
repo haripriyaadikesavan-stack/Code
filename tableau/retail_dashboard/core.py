@@ -4,17 +4,11 @@ Field registry, calculated fields (with dependency closure), parameters,
 and XML helpers. Everything is plain lxml so the output can be validated
 before packaging.
 """
-import os
 import re
 import uuid
 from xml.sax.saxutils import escape, quoteattr
 
 from lxml import etree
-
-# RETAIL_MERGE=1: build the analysis pages to be merged into the existing
-# Overall Retail Dashboard, reusing its Gross/Net, currency and date parameters
-MERGE = os.environ.get("RETAIL_MERGE") == "1"
-OLD_GN, OLD_CUR, OLD_START, OLD_END = "Gross/Net (copy)_1650287831742312449", "Parameter 10", "Parameter 2", "Parameter 1"
 
 DS = "federated.14wc2mc1wc09dr1b4kqf30rnj8dg"
 DS_CAPTION = "Year+ (Retail_Primary_Sales_pre_processed)"
@@ -114,7 +108,7 @@ class Param:
         return str(v)
 
     def column_xml(self, with_members=True):
-        dom = "list" if self.members else "range"
+        dom = "list" if self.members else ("range" if self.rng else "any")
         ftype = "nominal" if self.datatype == "string" else "quantitative"
         v = self.lit(self.default)
         s = (f"<column caption={attr(self.caption)} datatype={attr(self.datatype)} name={attr('[' + self.name + ']')} "

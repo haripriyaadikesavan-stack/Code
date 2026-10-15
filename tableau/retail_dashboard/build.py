@@ -14,7 +14,7 @@ from lxml import etree
 
 from core import C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, PDS, X, attr, new_uuid, txt
 from model import build_model
-from pages import DASHBOARDS, LAYOUT, NAV, NOTES, REGIONS, SIDE_NOTE, build_sheets, params_for
+from pages import DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, build_sheets, params_for
 from sheets import run
 
 W = 1400
@@ -158,35 +158,40 @@ class Zones:
 def dashboard(R, dash):
     H, items = LAYOUT[dash]
     Z = Zones(H)
-    title = dash if dash != "Home" else "Overview"
-    head = (run("Retail Performance  ·  ", "#cfe9d7", 13) + run(title, "#ffffff", 18, True)
-            + run("      " + NOTES[dash], "#cfe9d7", 10))
+    i = DASHBOARDS.index(dash)
+    head = (run("Retail Performance  ·  ", "#cfe9d7", 12) + run(f"Chapter {i + 1} of {len(DASHBOARDS)}   ", "#cfe9d7", 10)
+            + run(dash, "#ffffff", 18, True) + run("      " + NOTES[dash], "#cfe9d7", 10))
     Z.zone(0, 0, W, 56, f"<formatted-text>{head}</formatted-text>", bg=C_DARK, padding=10, type_v2="text")
     used = set()
+    # previous / next chapter (the story), top right
+    if i > 0:
+        Z.zone(W - 236, 12, 106, 32, "", bg=C_MID, name="Nav | ‹ Back", show_title="false")
+        used.add("Nav | ‹ Back")
+    if i < len(DASHBOARDS) - 1:
+        Z.zone(W - 122, 12, 106, 32, "", bg=C_MID, name="Nav | Next ›", show_title="false")
+        used.add("Nav | Next ›")
     n = len(NAV)
-    gap, x0 = 6, 14
+    gap, x0 = 4, 14
     bw = (W - 2 * x0 - (n - 1) * gap) // n
-    for i, (label, target) in enumerate(NAV):
-        Z.zone(x0 + i * (bw + gap), 64, bw, 32, "", bg=C_MID, name=f"Nav | {label}", show_title="false")
+    for k, (label, target) in enumerate(NAV):
+        Z.zone(x0 + k * (bw + gap), 64, bw, 30, "", bg=C_DARK if target == dash else C_MID, name=f"Nav | {label}", show_title="false")
         used.add(f"Nav | {label}")
-    if dash.startswith("Region - "):
-        for i, r in enumerate(REGIONS):
-            Z.zone(230 + i * 160, 108, 150, 30, "", bg=C_MID, name=f"Nav | Region {r}", show_title="false")
-            used.add(f"Nav | Region {r}")
-    Z.zone(14, 112, 200, 26, "<formatted-text>" + run("Filters & settings", C_DARK, 10, True) + "</formatted-text>", type_v2="text")
-    y = 140
+    Z.zone(14, 104, 200, 26, "<formatted-text>" + run("Filters & settings", C_DARK, 10, True) + "</formatted-text>", type_v2="text")
+    y = 132
     params = params_for(dash)
     for pname, mode in params:
         Z.zone(14, y, 200, 52, "", bg=C_BG, margin=2, mode=mode, param=f"[Parameters].[{pname}]", type_v2="paramctrl")
         y += 54
     note = SIDE_NOTE
     if dash == "Pavilion":
-        note = "Pavilion figures come from Pavilion_Unpivoted.xlsx as published (slabs and counts); the filters do not apply to them."
-    elif dash.startswith("Region - "):
-        note = "This dashboard always shows its own region.\n" + SIDE_NOTE
-    Z.zone(14, y + 6, 200, 250, "<formatted-text>" + run(note, C_MUTED, 8) + "</formatted-text>", type_v2="text")
+        note = ("The slab and qualification tables come from Pavilion_Unpivoted.xlsx as published; the filters do not apply to them.\n"
+                + SIDE_NOTE)
+    Z.zone(14, y + 6, 200, 300, "<formatted-text>" + run(note, C_MUTED, 8) + "</formatted-text>", type_v2="text")
     for name, x, yy, w, h in items:
-        Z.zone(x, yy, w, h, "", bg="#ffffff", margin=4, padding=4, name=name, show_title="true")
+        if name.startswith("H | "):
+            Z.zone(x, yy, w, h, "", bg="#eaf4ee", margin=4, padding=6, name=name, show_title="false")
+        else:
+            Z.zone(x, yy, w, h, "", bg="#ffffff", margin=4, padding=4, name=name, show_title="true")
         used.add(name)
     pnames = sorted({p for p, _ in params})
     pdeps = ""
@@ -205,17 +210,33 @@ def dashboard(R, dash):
     return X(xml), used
 
 
+def _action(caption, dash, sheet, target):
+    return (f"<action caption={attr(caption)} name='[Action_{uuid.uuid4().hex.upper()}]'>"
+            f"<activation auto-clear='true' type='on-select' />"
+            f"<source dashboard={attr(dash)} type='sheet' worksheet={attr(sheet)} />"
+            f"<command command='tsc:tsl-filter'><param name='special-fields' value='all' /><param name='target' value={attr(target)} /></command></action>")
+
+
 def actions_xml(S, dash_used):
     out = []
     for dash, used in dash_used.items():
+        i = DASHBOARDS.index(dash)
         for name in sorted(used):
             s = S[name]
-            if not name.startswith("Nav | ") or s.nav_target == dash:
+            if not name.startswith("Nav | "):
                 continue
-            out.append(f"<action caption={attr('Go to ' + s.nav_target)} name='[Action_{uuid.uuid4().hex.upper()}]'>"
-                       f"<activation auto-clear='true' type='on-select' />"
-                       f"<source dashboard={attr(dash)} type='sheet' worksheet={attr(name)} />"
-                       f"<command command='tsc:tsl-filter'><param name='special-fields' value='all' /><param name='target' value={attr(s.nav_target)} /></command></action>")
+            if name == "Nav | ‹ Back":
+                target = DASHBOARDS[i - 1]
+            elif name == "Nav | Next ›":
+                target = DASHBOARDS[i + 1]
+            else:
+                target = s.nav_target
+            if target == dash:
+                continue
+            out.append(_action("Go to " + target, dash, name, target))
+        # click a row: filter the rest of this dashboard (as the old dashboards did)
+        for name in DRILL.get(dash, []):
+            out.append(_action(f"Filter {dash} by {name.split(' | ')[1].lower()}", dash, name, dash))
     return X("<actions>" + "".join(out) + "</actions>")
 
 

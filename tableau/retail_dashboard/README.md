@@ -1,66 +1,59 @@
-# Retail Dashboard (Tableau) — generator
+# Retail Dashboard (Tableau) — v4, built from scratch
 
-Builds `Retail Dashboard.twbx` in the eCommerce dashboard's style:
-- the same green theme;
-- a navigation bar on every page;
-- one filter panel on every page;
-- KPI cards on top.
-
-It reuses the data source of `Overall Retail Dashboard.twbx` unchanged:
-- the same SharePoint files and relationships;
-- the same extract, so the refresh works as before.
-
-All old calculations, sheets and dashboards are replaced.
+Builds `Retail Dashboard v4.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before. Every calculation, sheet and dashboard is new.
 
 ```
-python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard.twbx"
-python validate.py "Retail Dashboard.twb"      # static checks on the generated XML
-python order_check.py "Retail Dashboard.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"   # element order / attributes vs real Tableau files
+python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v4.twbx"
+python validate.py "Retail Dashboard v4.twb"        # references, tables, aggregation, layout, actions
+python order_check.py "Retail Dashboard v4.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
+python wire.py "Retail Dashboard v4.twb" wireframes  # optional PNG wireframes (needs matplotlib)
 ```
 
-With `RETAIL_MERGE=1`, only the analysis pages are built (Executive, Branches, Products, Partners, Target vs Achievement, Order Book, Explore). They use the existing workbook's own Gross/Net, Currency Selector, Start Date and End Date parameters, and "Home" opens its Retail Overall Dashboard. `../retail_dashboard_qc/merge.py` adds them to that workbook.
+Needs `lxml`. The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored.
 
-Needs `lxml`. The `.twbx` / `.twb` / `.hyper` files contain business data and
-are git-ignored.
+## The story: 12 chapters
 
-## Pages
+Every page has:
+- a navigation bar with all 12 chapters;
+- Back / Next buttons;
+- a headline sentence, computed from the current filters, that states the main finding.
 
-| Page | What it answers |
-|---|---|
-| Home | Headline KPIs, region table, monthly trend |
-| MTD | Month to date vs the same days last year, this month's target, yesterday's sales / OB, branch and ASM MTD tables, top partners |
-| Executive | Sales vs last year and vs target, region table, branch achievement and growth |
-| Regions | One dashboard per region (East, North, South, West1, West2), always filtered to that region |
-| Branches | Branch scorecard, Wiser / Miluz Zeta by branch, ASM table |
-| Products | Families, Helios activity, product classification, focus families by region, top 25 materials |
-| Partners | Slabs, tier, RD/KRO, new / revival partners, onboarded year, top and at-risk partners |
-| Target vs Achievement | Branch target vs achievement (monthly and yearly targets), branch x month heat map, partner targets (annual 100% / 108%, quarter, Wiser, Miluz Zeta) |
-| SSP | SSP target vs achievement, with vs without SSP, monthly trend, top SSP partners |
-| Pavilion | Pavilion type and classification slabs, minimum slab / total target / Wiser slab qualification, retailer app T&C |
-| Order Book | OB vs last year, sales-to-OB conversion, backlog by branch and age |
-| Explore | Any dimension against all measures |
+Each analysis appears once.
 
-## Filters (left panel, every page)
+| # | Chapter | Content |
+|---|---|---|
+| 1 | Overview | KPIs, three-year monthly trend, quarters vs last year, sales vs monthly target, region share, RD / KRO split |
+| 2 | Regions | Region scorecard, monthly sales by region, region x month achievement, branch sales, Wiser / Miluz Zeta by region. Click a region to filter the page. |
+| 3 | Branches | Branch scorecard, Wiser / Miluz Zeta by branch, ASM performance. Click a branch to see its ASMs. |
+| 4 | Products | Family value and quantity, activity (FD / WD ...), new products, classification, top 25 materials |
+| 5 | Partners | Achievement bands, slabs, tiers, new / revival by month, onboarded year, top 10, partners to watch |
+| 6 | All partners | Every partner's numbers: sales, last year, growth, FY target, Ach %, OB, backlog, days since last sale. Also every partner month by month, with Partner search. |
+| 7 | Targets | Branch x month achievement and QTOD / ATOD partner targets (annual 100% / 108%, quarters, Wiser, Zeta) |
+| 8 | SSP & reach | SSP targets, with vs without SSP, SSP trend and top SSP partners, active and new cities by branch |
+| 9 | Pavilion | Pavilion partners vs target by branch, with primary purchases matched by GSTIN, plus the published slab and qualification tables |
+| 10 | MTD | Month to date vs the same days last year and this month's target; branches, ASMs, families, top partners |
+| 11 | Orders | Order book vs last year, sales-to-OB conversion, backlog ageing, backlog by branch and partner, every open order line |
+| 12 | Explore | Any dimension against all measures |
 
-- **Period:** YTD, QTD, MTD, Last month, Full year, or Custom range. Periods end today.
-- **Gross / Net.**
-- **Units:** INR, Lakh, Mn, Cr.
-- **Region, Branch, Family, Partner type.**
-- **Target basis:** "Pro-rated to date" or "Full months".
+## Overall, region-wise and branch-wise
+
+The Region, Branch, Family, Activity and Partner type filters on the left apply to every chapter. Each chapter can therefore be read for the whole business, for one region or for one branch, without separate copies of the dashboards.
 
 ## Business rules
 
-- **Sales, OB and Backlog dates:**
+- **Sales, OB and Backlog:**
   - Sales = `Type = Sales`, dated by `InvoiceDate`.
   - OB = `Type = OB`, dated by `Calendar Day`.
-  - Backlog = `Type = Backlog`, the open orders. They are aged from `OrderCreationDate`.
-- **Last year:** the same dates one year earlier. Growth % compares against this.
-- **Monthly branch targets** (Monthly Targets sheet) are **net**. Gross = net ÷ 0.83.
-  "Full months" (default) counts each month's full target; "Pro-rated to date" counts the current month only up to today.
-- **Yearly branch targets** (Branch Targets sheet) are **net**. Gross = net ÷ 0.83.
-- **Partner targets** (QTOD and ATOD file) are **gross**. Net = gross × 0.83.
-- **SSP targets** are used as they are (as in the old workbook).
-- **New / revival partner:** the first sale is in the current year. The data starts two years back, so this also means no sales in the previous two years.
-- **Region filter:** applied as a sheet filter, so the region dashboards always show their own region.
-- **Pavilion:** shown as published in Pavilion_Unpivoted.xlsx (the slabs are text ranges); the filters do not apply.
-- **Row-level security:** the old *Branch RLS* user filter is rebuilt as two calculations, `Branch access (sales)` and `Branch access (partner targets)`. They use the same Tableau groups. They are applied to the partner-level pages (Partners, Partner Targets, Explore, Backlog partners), where the old workbook applied it.
+  - Backlog = `Type = Backlog`, aged from `OrderCreationDate`, in the buckets < 20, 20-50, 51-100 and over 100 days.
+- **Growth:** compares the same dates last year. The three-year trend also shows the same dates two years ago.
+- **Monthly and yearly branch targets** are **net**. Gross = net ÷ 0.83.
+- **Partner targets** are **gross**. Net = gross × 0.83.
+  - The FY target comes from the Partner Targets sheet, as the old Partner Ach% did.
+  - The quarter, Wiser and Zeta views come from the QTOD / ATOD file.
+- **SSP targets** are used as they are.
+- **New / revival partner:** first sale is this year. **Lapsed partner:** bought in the same period last year but not this year.
+- **New city:** the first ever sale in that city is this year.
+- **Pavilion partners:** active rows of the Pavilion Sales sheet, matched to primary sales by GSTIN. The target is used as it is in the file.
+  - ROs buy through distributors, so their sales appear only in the EazyDMS secondary data. That data ends in December 2024 in the current extract.
+- **Activity:** HDCFD = FD, so the old FD dashboard is chapter 1-11 with Activity = HDCFD.
+- **Row-level security:** the old *Branch RLS* user filter is rebuilt as `Branch access (sales)` and `Branch access (partner targets)` on the partner-level sheets.

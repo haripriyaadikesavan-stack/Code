@@ -2,10 +2,12 @@
 import re
 
 from core import (DS, DS_CAPTIONS, C_BAND, C_DARK, C_HEAD_BG, C_MID, C_MUTED, C_TEXT,
-                  attr, inst, inst_xml, iref, new_uuid, txt)
+                  MERGE, OLD_CUR, attr, inst, inst_xml, iref, new_uuid, txt)
 
 MN = f"[{DS}].[:Measure Names]"
 MV = f"[{DS}].[Multiple Values]"
+
+UNITS_TOKEN = f"<[Parameters].[{OLD_CUR}]>" if MERGE else "<[Parameters].[p Units]>"
 
 
 def mn(ds):
@@ -29,7 +31,7 @@ def run(text, color=C_TEXT, size=9, bold=False):
 def title_runs(title, subtitle=None, param_units=True):
     r = run(title, C_DARK, 11, True)
     if param_units:
-        r += run(" (", C_DARK, 11, True) + run("<[Parameters].[p Units]>", C_DARK, 11, True) + run(")", C_DARK, 11, True)
+        r += run(" (", C_DARK, 11, True) + run(UNITS_TOKEN, C_DARK, 11, True) + run(")", C_DARK, 11, True)
     if subtitle:
         r += run("\n" + subtitle, C_MUTED, 8)
     return r

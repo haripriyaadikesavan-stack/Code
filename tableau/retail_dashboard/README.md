@@ -18,6 +18,8 @@ python validate.py "Retail Dashboard.twb"      # static checks on the generated 
 python order_check.py "Retail Dashboard.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"   # element order / attributes vs real Tableau files
 ```
 
+With `RETAIL_MERGE=1`, only the analysis pages are built (Executive, Branches, Products, Partners, Target vs Achievement, Order Book, Explore). They use the existing workbook's own Gross/Net, Currency Selector, Start Date and End Date parameters, and "Home" opens its Retail Overall Dashboard. `../retail_dashboard_qc/merge.py` adds them to that workbook.
+
 Needs `lxml`. The `.twbx` / `.twb` / `.hyper` files contain business data and
 are git-ignored.
 

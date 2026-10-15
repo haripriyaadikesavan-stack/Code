@@ -1,6 +1,6 @@
 """Sheets and dashboards of the Retail dashboard."""
-from core import C_MID, C_TARGET, PDS
-from sheets import ACH_SCALE, GROWTH_SCALE, MN, MV, Sheet, kpi, nav, run, title_runs, is_value
+from core import C_MID, C_TARGET, MERGE, OLD_CUR, OLD_END, OLD_GN, OLD_START, PDS
+from sheets import ACH_SCALE, GROWTH_SCALE, MN, MV, UNITS_TOKEN, Sheet, kpi, nav, run, title_runs, is_value
 
 REGIONS = ["East", "North", "South", "West1", "West2"]
 # top navigation: (button label, dashboard name)
@@ -10,6 +10,12 @@ NAV = [("Home", "Home"), ("MTD", "MTD"), ("Executive", "Executive"), ("Regions",
        ("Order Book", "Order Book"), ("Explore", "Explore")]
 REGION_DASH = [f"Region - {r}" for r in REGIONS]
 DASHBOARDS = [d for _, d in NAV if not d.startswith("Region")] + REGION_DASH
+if MERGE:
+    # analysis pages added to the existing workbook; "Home" goes back to its Retail Overall Dashboard
+    NAV = [("Home", "Retail Overall Dashboard"), ("Executive", "Executive"), ("Branches", "Branches"),
+           ("Products", "Products"), ("Partners", "Partners"), ("Target vs Ach", "Target vs Achievement"),
+           ("Order Book", "Order Book"), ("Explore", "Explore")]
+    DASHBOARDS = [d for _, d in NAV[1:]]
 
 
 # ---------------------------------------------------------------- generic builders
@@ -276,7 +282,7 @@ def build_sheets(R):
                   ["Sales", "Sales PY", "Growth %", "Share of sales %", "OB", "Backlog", "Active partners", "Quantity"],
                   sort_by="Sales", widths=[300]), "P", "P")
     s.title = (run("Explore by ", "#0b4d33", 11, True) + run("<[Parameters].[p Dim]>", "#0b4d33", 11, True)
-               + run(" (", "#0b4d33", 11, True) + run("<[Parameters].[p Units]>", "#0b4d33", 11, True) + run(")", "#0b4d33", 11, True))
+               + run(" (", "#0b4d33", 11, True) + run(UNITS_TOKEN, "#0b4d33", 11, True) + run(")", "#0b4d33", 11, True))
     add(hbar(R, "X | Explore bars", "Top 30 by sales", "Explore by", "Sales", scale=("Growth %", GROWTH_SCALE),
              top=(30, "Sales CY (row)")), "P", "P")
 
@@ -352,6 +358,10 @@ def build_sheets(R):
 BASE_PARAMS = [("p Period", "compact"), ("p Start", "datetime"), ("p End", "datetime"), ("p Measure", "compact"),
                ("p Units", "compact"), ("p Region", "compact"), ("p Branch", "compact"), ("p Family", "compact"),
                ("p Channel", "compact"), ("p Basis", "compact")]
+if MERGE:
+    BASE_PARAMS = [(OLD_START, "datetime"), (OLD_END, "datetime"), (OLD_GN, "compact"), (OLD_CUR, "compact"),
+                   ("p Region", "compact"), ("p Branch", "compact"), ("p Family", "compact"), ("p Channel", "compact"),
+                   ("p Basis", "compact")]
 NO_PERIOD = [p for p in BASE_PARAMS if p[0] not in ("p Period", "p Start", "p End", "p Basis")]
 
 

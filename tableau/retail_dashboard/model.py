@@ -9,7 +9,7 @@ Business rules (same conversions as the existing Retail workbook):
   * Partner targets (QTOD and ATOD file) are GROSS; net = gross x 0.83.
   * SSP (SSA) targets are used as they are, as in the old workbook.
 """
-from core import PDS, Registry
+from core import MERGE, OLD_CUR, OLD_END, OLD_GN, OLD_START, PDS, Registry
 
 GROSS_FACTOR = 0.83
 FMT_V, FMT_P, FMT_N = "n#,##0.0;-#,##0.0", "p0.0%", "n#,##0;-#,##0"
@@ -126,12 +126,19 @@ def build_model(branches, branch_zone, families, rls_rules):
 
     # ================================================================ params
     P = R.param
-    P("p Period", "Period", "string", "YTD",
-      ["YTD", "QTD", "MTD", "Last month", "Full year", "Custom range"])
-    P("p Start", "Custom start", "date", "2026-01-01", rng=("2023-01-01", "2028-12-31", None))
-    P("p End", "Custom end", "date", "2026-12-31", rng=("2023-01-01", "2028-12-31", None))
-    P("p Measure", "Gross / Net", "string", "Gross", ["Gross", "Net"])
-    P("p Units", "Units", "string", "Mn", ["INR", "Lakh", "Mn", "Cr"])
+    if MERGE:
+        # the existing workbook's own controls (definitions are taken from that workbook when merging)
+        P(OLD_START, "Start Date", "date", "2026-01-01")
+        P(OLD_END, "End Date", "date", "2026-10-14")
+        P(OLD_GN, "Gross / Net", "string", "Gross Sales", ["Gross Sales", "Net Sales"])
+        P(OLD_CUR, "Currency Selector", "string", "MINR", ["INR", "MINR"])
+    else:
+        P("p Period", "Period", "string", "YTD",
+          ["YTD", "QTD", "MTD", "Last month", "Full year", "Custom range"])
+        P("p Start", "Custom start", "date", "2026-01-01", rng=("2023-01-01", "2028-12-31", None))
+        P("p End", "Custom end", "date", "2026-12-31", rng=("2023-01-01", "2028-12-31", None))
+        P("p Measure", "Gross / Net", "string", "Gross", ["Gross", "Net"])
+        P("p Units", "Units", "string", "Mn", ["INR", "Lakh", "Mn", "Cr"])
     P("p Region", "Region", "string", "All", ["All", "East", "North", "South", "West1", "West2"])
     P("p Branch", "Branch", "string", "All", ["All"] + branches)
     P("p Family", "Family", "string", "All", ["All"] + families)
@@ -144,18 +151,27 @@ def build_model(branches, branch_zone, families, rls_rules):
        "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter"])
 
     C = R.calc
-    PU, PM = "[Parameters].[p Units]", "[Parameters].[p Measure]"
+    if MERGE:
+        PU, PM, GV, NV = f"[Parameters].[{OLD_CUR}]", f"[Parameters].[{OLD_GN}]", "Gross Sales", "Net Sales"
+    else:
+        PU, PM, GV, NV = "[Parameters].[p Units]", "[Parameters].[p Measure]", "Gross", "Net"
 
     # ================================================================ parameter-only helpers
-    C("Units divisor", f"CASE {PU} WHEN 'INR' THEN 1 WHEN 'Lakh' THEN 100000 WHEN 'Mn' THEN 1000000 WHEN 'Cr' THEN 10000000 ELSE 1000000 END")
-    C("Period start", "DATE(CASE [Parameters].[p Period] "
+    if MERGE:
+        C("Units divisor", f"IF {PU} = 'MINR' THEN 1000000 ELSE 1 END")
+        C("Period start", f"DATE([Parameters].[{OLD_START}])", "date")
+        C("Period end", f"DATE([Parameters].[{OLD_END}])", "date")
+    else:
+        C("Units divisor", f"CASE {PU} WHEN 'INR' THEN 1 WHEN 'Lakh' THEN 100000 WHEN 'Mn' THEN 1000000 WHEN 'Cr' THEN 10000000 ELSE 1000000 END")
+    if not MERGE:
+      C("Period start", "DATE(CASE [Parameters].[p Period] "
       "WHEN 'YTD' THEN DATETRUNC('year', TODAY()) "
       "WHEN 'QTD' THEN DATETRUNC('quarter', TODAY()) "
       "WHEN 'MTD' THEN DATETRUNC('month', TODAY()) "
       "WHEN 'Last month' THEN DATEADD('month', -1, DATETRUNC('month', TODAY())) "
       "WHEN 'Full year' THEN DATETRUNC('year', TODAY()) "
       "ELSE [Parameters].[p Start] END)", "date")
-    C("Period end", "DATE(CASE [Parameters].[p Period] "
+      C("Period end", "DATE(CASE [Parameters].[p Period] "
       "WHEN 'Last month' THEN DATEADD('day', -1, DATETRUNC('month', TODAY())) "
       "WHEN 'Full year' THEN DATEADD('day', -1, DATEADD('year', 1, DATETRUNC('year', TODAY()))) "
       "WHEN 'Custom range' THEN [Parameters].[p End] "
@@ -166,11 +182,11 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("MTD LY start", "DATEADD('year', -1, {{MTD start}})", "date")
     C("MTD LY end", "DATEADD('year', -1, TODAY())", "date")
     # conversions exactly as in the old workbook
-    C("Net to gross", f"IF {PM} = 'Gross' THEN 1 / {GROSS_FACTOR} ELSE 1 END")      # monthly / yearly targets (net)
-    C("Gross to net", f"IF {PM} = 'Net' THEN {GROSS_FACTOR} ELSE 1 END")            # partner targets (gross)
+    C("Net to gross", f"IF {PM} = '{GV}' THEN 1 / {GROSS_FACTOR} ELSE 1 END")      # monthly / yearly targets (net)
+    C("Gross to net", f"IF {PM} = '{NV}' THEN {GROSS_FACTOR} ELSE 1 END")            # partner targets (gross)
 
     # ================================================================ primary table
-    C("Sales value (INR)", f"IF {PM} = 'Net' THEN [Net Sales] ELSE [Gross Sales] END")
+    C("Sales value (INR)", f"IF {PM} = '{NV}' THEN [Net Sales] ELSE [Gross Sales] END")
     C("Value", "{{Sales value (INR)}} / {{Units divisor}}")
     C("Region", "IFNULL([Zone], 'Unmapped')", "string")
     C("Branch", "IFNULL([Branch (Geography mapping)], 'Unmapped')", "string")

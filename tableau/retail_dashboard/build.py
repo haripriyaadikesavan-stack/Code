@@ -1,4 +1,4 @@
-"""Build 'Retail Dashboard.twbx' from the existing Retail workbook's data source.
+"""Build 'Retail Dashboard.twbx' from the existing Retail workbook's data sources.
 
 usage: python build.py <Overall Retail Dashboard.twbx> <output.twbx>
 """
@@ -12,14 +12,38 @@ import zipfile
 
 from lxml import etree
 
-from core import (C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, C_TEXT, DS, X, attr, inst, iref, new_uuid, txt)
+from core import C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, PDS, X, attr, new_uuid, txt
 from model import build_model
-from pages import LAYOUT, NOTES, PAGES, SIDEBAR_PARAMS, build_sheets
-from sheets import MN, run
+from pages import DASHBOARDS, LAYOUT, NAV, NOTES, REGIONS, SIDE_NOTE, build_sheets, params_for
+from sheets import run
 
 W = 1400
-EXTRA_PARAMS = {"Explore": [("p Dim", "compact")]}
 SRC_TWB = "Overall Retail Dashboard.twb"
+TOP_ORDER = ["document-format-change-manifest", "repository-location", "preferences", "style-theme", "style",
+             "local-data", "datasources", "datasource-relationships", "mapsources", "shared-views", "actions",
+             "worksheets", "dashboards", "windows", "datagraph", "thumbnails", "external"]
+BRANCH_ZONE = {"BBN": "East", "CHG": "East", "GAU": "East", "JKD": "East", "NPL": "East", "WB": "East",
+               "CHD": "North", "HR": "North", "J&K": "North", "NCR": "North", "NOIDA-GHZ": "North", "UP-1": "North", "UP-2": "North",
+               "AP": "South", "KAR": "South", "KER": "South", "TEL": "South", "TN-1": "South", "TN-2": "South",
+               "INDORE": "West1", "MUM": "West1", "NAGPUR": "West1", "NASHIK": "West1", "PCMC": "West1", "PUNE": "West1",
+               "GUJ": "West2", "RAJ": "West2"}
+FAMILIES = ["Unica Pure", "Miluz Zeta", "Livia", "Easy9 MCB 6kA SP", "Easy9 RCCB", "Easy9 MCB 10kA MP", "Easy9 MCB 6kA MP",
+            "AvatarOn", "Easy9 DB TPN", "Acti9", "Easy9 Isolator", "Easy9 MCB 10kA SP", "WD- Others", "Easy9 DB SPN",
+            "Zencelo", "Opale", "Wiser", "Easy9 DB Phase Selector", "Unica Pure Plus", "Easy9 DB VTPN", "UnicaX", "Electra",
+            "Easy9 DB Selector Switch", "PratiKa", "FD- Others", "Easy9 Surge Arrestor", "Easy9 Enclosure",
+            "Easy9 Metal P and S", "SPE- Others", "ClipsalX", "COS- Others", "EVC", "KNX"]
+# short column headers for the Pavilion measures (Measure Names aliases; trailing spaces keep
+# them unique, the same way the old workbook did it)
+PAV_ALIASES = {
+    "No. of KRO (Minimum!Slab!Achievement)": "No. of KRO", "No. of RO (Minimum!Slab!Achievement)": "No. of RO",
+    "No of KRO Achieved": "KRO qualified", "No. of RO Achieved": "RO qualified",
+    "No. of KRO (Total!Target!Achievement)": "No. of KRO ", "No. of RO (Total!Target!Achievement)": "No. of RO ",
+    "No of KRO Achieved (Total!Target!Achievement)": "KRO qualified ", "No. of RO Achieved (Total!Target!Achievement)": "RO qualified ",
+    "No. of KRO": "No. of KRO  ", "No. of RO": "No. of RO  ", "No of KRO > 1 lac": "KRO above 1 L", "No. of RO > 25K": "RO above 25 K",
+    "Count of 2026 Classification": "Pavilions", "Count of 2026 Classification (Sales!Classification!Summary)": "Pavilions ",
+    "2025-26 Growth %": "Growth %", "2025-26 Growth % (Sales!Classification!Summary)": "Growth % ",
+    "Total no. of RO Pavilions": "RO pavilions", "Accepted": "Accepted", "Pending": "Pending",
+}
 
 
 def read_source(twbx):
@@ -35,8 +59,7 @@ def rls_rules(ds):
     union = g[0][1]
     rules = []
     for f in union:
-        expr = f.get("expression") or ""
-        m = re.match(r"ISMEMBEROF\('(.+)'\)$", expr)
+        m = re.match(r"ISMEMBEROF\('(.+)'\)$", f.get("expression") or "")
         if not m:
             continue
         members = [x.get("member") for x in f.iter("groupfilter") if x.get("function") == "member"]
@@ -45,67 +68,67 @@ def rls_rules(ds):
     return rules
 
 
-def clean_datasource(ds, R):
-    """Keep the connection / extract / relationships; replace all calculations."""
-    keep_base = {f.name for f in R.fields.values() if not f.is_calc}
+def display_name(c):
+    return c.get("caption") or c.get("name", "").strip("[]")
+
+
+def clean_datasource(ds, R, dsname, aliases=None):
+    """Keep connection / extract / relationships; replace all calculations, groups and sets."""
+    mine = {f.name: f for f in R.fields.values() if f.ds == dsname}
     for c in list(ds):
         tag = c.tag
         if tag == "column":
             if c.find("calculation") is not None or c.get("name") == "[:Measure Names]":
                 ds.remove(c)
-            elif c.get("name", "").strip("[]") in keep_base:
-                f = R.fields[c.get("name").strip("[]")]
+            elif c.get("name", "").strip("[]") in mine:
+                f = mine[c.get("name").strip("[]")]
                 if f.caption:
                     c.set("caption", f.caption)
+                if f.fmt:
+                    c.set("default-format", f.fmt)
                 if c.get("hidden") == "true":
                     del c.attrib["hidden"]
         elif tag in ("column-instance", "group", "style", "default-sorts", "field-sort-info",
                      "datasource-dependencies", "drill-paths"):
             ds.remove(c)
-    # base fields that had no <column> element yet -> add one so captions show
+    # rename other fields whose display name clashes with ours
+    taken = {f.caption or f.name for f in mine.values()}
+    for c in ds.findall("column"):
+        n = c.get("name", "").strip("[]")
+        if n not in mine and display_name(c) in taken:
+            c.set("caption", display_name(c) + " (source)")
     present = {c.get("name") for c in ds.findall("column")}
-    anchor = ds.find("extract")
-    idx = list(ds).index(anchor)
-    adds = [f for f in R.fields.values() if not f.is_calc and f.ref not in present and f.caption]
-    calcs = [f for f in R.fields.values() if f.is_calc]
+    idx = list(ds).index(ds.find("extract"))
+    adds = [f for f in mine.values() if not f.is_calc and f.ref not in present and (f.caption or f.fmt)]
+    calcs = [f for f in mine.values() if f.is_calc]
+    if aliases:
+        al = "".join(f"<alias key={attr(chr(34) + f'[{dsname}].[sum:{k}:qk]' + chr(34))} value={attr(v)} />" for k, v in aliases.items())
+        ds.insert(idx, X(f"<column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'><aliases>{al}</aliases></column>"))
+        idx += 1
     for f in adds + calcs:
         ds.insert(idx, X(f.column_xml()))
         idx += 1
-    # parameters used by the data source calcs
     params = set()
     for f in calcs:
         params |= f.params
-    deps = X("<datasource-dependencies datasource='Parameters'>"
-             + "".join(R.params[p].column_xml(with_members=False) for p in sorted(params)) + "</datasource-dependencies>")
-    # colours for discrete fields (Measure Names and bands): after <layout>
-    lay = ds.find("layout")
-    ds.insert(list(ds).index(lay) + 1, X(style_xml(R)))
     og = [c for c in ds if "object-graph" in str(c.tag)][0]
-    ds.insert(list(ds).index(og), deps)
+    if params:
+        ds.insert(list(ds).index(og), X("<datasource-dependencies datasource='Parameters'>"
+                                        + "".join(R.params[p].column_xml(with_members=False) for p in sorted(params))
+                                        + "</datasource-dependencies>"))
+    return ds
 
 
 def style_xml(R):
-    def mn(caption):
-        f = R[caption]
-        return f'"[{DS}].[usr:{f.name}:qk]"'
-    green = ["Sales", "OB", "Wiser sales", "Zeta sales", "New / revival partners", "Partners (count)"]
-    grey = ["Sales PY", "OB PY"]
-    amber = ["Target", "Wiser target", "Zeta target"]
+    """Measure Names colours: this year green, last year grey, targets amber."""
+    mn = lambda c: f'"[{DS}].[usr:{R[c].name}:qk]"'
+    green = ["Sales", "OB", "MTD sales", "SSP sales"]
+    grey = ["Sales PY", "OB PY", "MTD sales LY", "SSP sales PY"]
+    amber = ["Target"]
     maps = "".join(f"<map to='{C_MID}'><bucket>{txt(mn(c))}</bucket></map>" for c in green)
     maps += "".join(f"<map to='{C_PY}'><bucket>{txt(mn(c))}</bucket></map>" for c in grey)
     maps += "".join(f"<map to='{C_TARGET}'><bucket>{txt(mn(c))}</bucket></map>" for c in amber)
-    band_cols = {"1. 100% and above": "#1f7a4d", "2. 90-100%": "#7fbf7b", "3. 75-90%": "#e8a33d",
-                 "4. Below 75%": "#c0392b", "No target": "#9aa5a0"}
-    bands = lambda cap: (f"<encoding attr='color' field='[usr:{R[cap].name}:nk]' type='palette'>"
-                         + "".join(f"<map to='{c}'><bucket>&quot;{k}&quot;</bucket></map>" for k, c in band_cols.items())
-                         + "</encoding>")
-    growth = (f"<encoding attr='color' field='[usr:{R['Growth band'].name}:nk]' type='palette'>"
-              f"<map to='#1f7a4d'><bucket>&quot;Growing&quot;</bucket></map><map to='#c0392b'><bucket>&quot;Declining&quot;</bucket></map>"
-              f"<map to='#9aa5a0'><bucket>&quot;New&quot;</bucket></map></encoding>")
-    return ("<style><style-rule element='mark'>"
-            f"<encoding attr='color' field='[:Measure Names]' type='palette'>{maps}</encoding>"
-            + bands("Ach band") + bands("Partner Ach band") + growth
-            + "</style-rule></style>")
+    return f"<style><style-rule element='mark'><encoding attr='color' field='[:Measure Names]' type='palette'>{maps}</encoding></style-rule></style>"
 
 
 def params_datasource(R):
@@ -132,34 +155,44 @@ class Zones:
         self.items.append(f"<zone h='{u(h, self.H)}' id='{self.n}'{extra} w='{u(w, W)}' x='{u(x, W)}' y='{u(y, self.H)}'>{inner}{style}</zone>")
 
 
-def dashboard(R, page, S):
-    H, items = LAYOUT[page]
+def dashboard(R, dash):
+    H, items = LAYOUT[dash]
     Z = Zones(H)
-    head = (run("Retail Performance  ·  ", "#cfe9d7", 13) + run(page if page != "Home" else "Overview", "#ffffff", 18, True)
-            + run("      " + NOTES[page], "#cfe9d7", 10))
+    title = dash if dash != "Home" else "Overview"
+    head = (run("Retail Performance  ·  ", "#cfe9d7", 13) + run(title, "#ffffff", 18, True)
+            + run("      " + NOTES[dash], "#cfe9d7", 10))
     Z.zone(0, 0, W, 56, f"<formatted-text>{head}</formatted-text>", bg=C_DARK, padding=10, type_v2="text")
-    # navigation row
-    bw, gap, x0 = 160, 8, 14
-    for i, p in enumerate(PAGES):
-        Z.zone(x0 + i * (bw + gap), 64, bw, 32, "", bg=C_MID, name=f"Nav | {p}", show_title="false")
-    # sidebar
+    used = set()
+    n = len(NAV)
+    gap, x0 = 6, 14
+    bw = (W - 2 * x0 - (n - 1) * gap) // n
+    for i, (label, target) in enumerate(NAV):
+        Z.zone(x0 + i * (bw + gap), 64, bw, 32, "", bg=C_MID, name=f"Nav | {label}", show_title="false")
+        used.add(f"Nav | {label}")
+    if dash.startswith("Region - "):
+        for i, r in enumerate(REGIONS):
+            Z.zone(230 + i * 160, 108, 150, 30, "", bg=C_MID, name=f"Nav | Region {r}", show_title="false")
+            used.add(f"Nav | Region {r}")
     Z.zone(14, 112, 200, 26, "<formatted-text>" + run("Filters & settings", C_DARK, 10, True) + "</formatted-text>", type_v2="text")
     y = 140
-    for pname, mode in SIDEBAR_PARAMS + EXTRA_PARAMS.get(page, []):
+    params = params_for(dash)
+    for pname, mode in params:
         Z.zone(14, y, 200, 52, "", bg=C_BG, margin=2, mode=mode, param=f"[Parameters].[{pname}]", type_v2="paramctrl")
         y += 54
-    note = ("Period: YTD / QTD / MTD run to today; 'Custom range' uses the two dates.\n"
-            "Growth compares the same dates last year.\n"
-            "Targets: monthly branch targets (net); Gross shows net / 0.83. "
-            "'Pro-rated to date' counts the current month's target only up to today.\n"
-            "Partner pages follow the Branch RLS groups.")
-    Z.zone(14, y + 6, 200, 230, "<formatted-text>" + run(note, C_MUTED, 8) + "</formatted-text>", type_v2="text")
+    note = SIDE_NOTE
+    if dash == "Pavilion":
+        note = "Pavilion figures come from Pavilion_Unpivoted.xlsx as published (slabs and counts); the filters do not apply to them."
+    elif dash.startswith("Region - "):
+        note = "This dashboard always shows its own region.\n" + SIDE_NOTE
+    Z.zone(14, y + 6, 200, 250, "<formatted-text>" + run(note, C_MUTED, 8) + "</formatted-text>", type_v2="text")
     for name, x, yy, w, h in items:
         Z.zone(x, yy, w, h, "", bg="#ffffff", margin=4, padding=4, name=name, show_title="true")
-    used = {n for n, *_ in items} | {f"Nav | {p}" for p in PAGES}
-    params = sorted({p for p, _ in SIDEBAR_PARAMS + EXTRA_PARAMS.get(page, [])})
-    pdeps = ("<datasources><datasource name='Parameters' /></datasources><datasource-dependencies datasource='Parameters'>"
-             + "".join(R.params[p].column_xml() for p in params) + "</datasource-dependencies>")
+        used.add(name)
+    pnames = sorted({p for p, _ in params})
+    pdeps = ""
+    if pnames:
+        pdeps = ("<datasources><datasource name='Parameters' /></datasources><datasource-dependencies datasource='Parameters'>"
+                 + "".join(R.params[p].column_xml() for p in pnames) + "</datasource-dependencies>")
     style = (f"<style><style-rule element='table'><format attr='background-color' value='{C_BG}' /></style-rule>"
              "<style-rule element='parameter-ctrl'><format attr='font-size' value='9' /><format attr='color' value='#333333' />"
              "<format attr='border-color' value='#d9d9d9' /><format attr='border-width' value='1' /><format attr='border-style' value='solid' />"
@@ -167,30 +200,31 @@ def dashboard(R, page, S):
              f"<style-rule element='parameter-ctrl-title'><format attr='font-size' value='8' /><format attr='font-weight' value='bold' /><format attr='color' value='{C_DARK}' /></style-rule></style>")
     root = (f"<zone h='100000' id='1' type-v2='layout-basic' w='100000' x='0' y='0'>{''.join(Z.items)}"
             f"<zone-style><format attr='background-color' value='{C_BG}' /></zone-style></zone>")
-    xml = (f"<dashboard name={attr(page)}>{style}<size maxheight='{H}' maxwidth='{W}' minheight='{H}' minwidth='{W}' />"
+    xml = (f"<dashboard name={attr(dash)}>{style}<size maxheight='{H}' maxwidth='{W}' minheight='{H}' minwidth='{W}' />"
            f"{pdeps}<zones>{root}</zones><simple-id uuid='{new_uuid()}' /></dashboard>")
     return X(xml), used
 
 
-def actions_xml(dash_used):
+def actions_xml(S, dash_used):
     out = []
-    for page, used in dash_used.items():
-        for p in PAGES:
-            if p == page:
+    for dash, used in dash_used.items():
+        for name in sorted(used):
+            s = S[name]
+            if not name.startswith("Nav | ") or s.nav_target == dash:
                 continue
-            out.append(f"<action caption={attr('Go to ' + p)} name='[Action_{uuid.uuid4().hex.upper()}]'>"
+            out.append(f"<action caption={attr('Go to ' + s.nav_target)} name='[Action_{uuid.uuid4().hex.upper()}]'>"
                        f"<activation auto-clear='true' type='on-select' />"
-                       f"<source dashboard={attr(page)} type='sheet' worksheet={attr('Nav | ' + p)} />"
-                       f"<command command='tsc:tsl-filter'><param name='special-fields' value='all' /><param name='target' value={attr(p)} /></command></action>")
+                       f"<source dashboard={attr(dash)} type='sheet' worksheet={attr(name)} />"
+                       f"<command command='tsc:tsl-filter'><param name='special-fields' value='all' /><param name='target' value={attr(s.nav_target)} /></command></action>")
     return X("<actions>" + "".join(out) + "</actions>")
 
 
 def windows_xml(S, dash_used):
     out = []
-    for i, (page, used) in enumerate(dash_used.items()):
-        vps = "".join(f"<viewpoint name={attr(n)}><zoom type='entire-view' /></viewpoint>" for n in sorted(used))
+    for i, (dash, used) in enumerate(dash_used.items()):
+        vps = "".join(f"<viewpoint name={attr(n)}><zoom type='{S[n].fit}' /></viewpoint>" for n in sorted(used))
         mx = " maximized='true'" if i == 0 else ""
-        out.append(f"<window class='dashboard'{mx} name={attr(page)}><viewpoints>{vps}</viewpoints><active id='-1' />"
+        out.append(f"<window class='dashboard'{mx} name={attr(dash)}><viewpoints>{vps}</viewpoints><active id='-1' />"
                    f"<simple-id uuid='{new_uuid()}' /></window>")
     for name in S:
         out.append(f"<window class='worksheet' hidden='true' name={attr(name)}><cards><edge name='left'><strip size='160'>"
@@ -205,24 +239,19 @@ def main(src, out):
     root = tree.getroot()
     ds_list = root.find("datasources")
     retail = [d for d in ds_list if d.get("name") == DS][0]
-    rules = rls_rules(retail)
-    branch_zone = {"BBN": "East", "CHG": "East", "GAU": "East", "JKD": "East", "NPL": "East", "WB": "East",
-                   "CHD": "North", "HR": "North", "J&K": "North", "NCR": "North", "NOIDA-GHZ": "North", "UP-1": "North", "UP-2": "North",
-                   "AP": "South", "KAR": "South", "KER": "South", "TEL": "South", "TN-1": "South", "TN-2": "South",
-                   "INDORE": "West1", "MUM": "West1", "NAGPUR": "West1", "NASHIK": "West1", "PCMC": "West1", "PUNE": "West1",
-                   "GUJ": "West2", "RAJ": "West2"}
-    families = ["Unica Pure", "Miluz Zeta", "Livia", "Easy9 MCB 6kA SP", "Easy9 RCCB", "Easy9 MCB 10kA MP", "Easy9 MCB 6kA MP",
-                "AvatarOn", "Easy9 DB TPN", "Acti9", "Easy9 Isolator", "Easy9 MCB 10kA SP", "WD- Others", "Easy9 DB SPN",
-                "Zencelo", "Opale", "Wiser", "Easy9 DB Phase Selector", "Unica Pure Plus", "Easy9 DB VTPN", "UnicaX", "Electra",
-                "Easy9 DB Selector Switch", "PratiKa", "FD- Others", "Easy9 Surge Arrestor", "Easy9 Enclosure",
-                "Easy9 Metal P and S", "SPE- Others", "ClipsalX", "COS- Others", "EVC", "KNX"]
-    R = build_model(sorted(branch_zone), branch_zone, families, rules)
+    pav = [d for d in ds_list if d.get("name") == PDS][0]
+    R = build_model(sorted(BRANCH_ZONE), BRANCH_ZONE, FAMILIES, rls_rules(retail))
+    for k in ("2025-26 Growth %", "2025-26 Growth % (Sales!Classification!Summary)"):
+        R.fields[f"{PDS}|{k}"].fmt = "p0.0%"
 
-    clean_datasource(retail, R)
+    clean_datasource(retail, R, DS)
+    retail.insert(list(retail).index(retail.find("layout")) + 1, X(style_xml(R)))
+    clean_datasource(pav, R, PDS, aliases=PAV_ALIASES)
     for d in list(ds_list):
         ds_list.remove(d)
     ds_list.append(params_datasource(R))
     ds_list.append(retail)
+    ds_list.append(pav)
 
     S = build_sheets(R)
     for tag in ("repository-location", "actions", "worksheets", "dashboards", "windows", "thumbnails"):
@@ -230,21 +259,22 @@ def main(src, out):
         if e is not None:
             root.remove(e)
     ws = etree.SubElement(root, "worksheets")
-    for s in S.values():
-        ws.append(X(s.xml()))
     dbs = etree.SubElement(root, "dashboards")
     dash_used = {}
-    for p in PAGES:
-        d, used = dashboard(R, p, S)
-        dbs.append(d)
-        dash_used[p] = used
-    root.append(actions_xml(dash_used))
+    for d in DASHBOARDS:
+        el, used = dashboard(R, d)
+        dbs.append(el)
+        dash_used[d] = used
+    missing = sorted({n for used in dash_used.values() for n in used if n not in S})
+    if missing:
+        raise ValueError(f"dashboards reference missing sheets: {missing}")
+    on_dash = set().union(*dash_used.values())
+    S = {n: s for n, s in S.items() if n in on_dash}        # drop sheets not placed anywhere
+    for s in S.values():
+        ws.append(X(s.xml()))
+    root.append(actions_xml(S, dash_used))
     root.append(windows_xml(S, dash_used))
-    # Tableau validates the order of the top-level elements
-    order = ["document-format-change-manifest", "repository-location", "preferences", "style-theme", "style",
-             "local-data", "datasources", "datasource-relationships", "mapsources", "shared-views", "actions",
-             "worksheets", "dashboards", "windows", "datagraph", "thumbnails", "external"]
-    rank = lambda e: next((i for i, t in enumerate(order) if str(e.tag) == t or str(e.tag).endswith("..." + t)), 99)
+    rank = lambda e: next((i for i, t in enumerate(TOP_ORDER) if str(e.tag) == t or str(e.tag).endswith("..." + t)), 99)
     kids = sorted(list(root), key=rank)
     if any(rank(k) == 99 for k in kids):
         raise ValueError(f"unknown top-level element(s): {[k.tag for k in kids if rank(k) == 99]}")
@@ -252,17 +282,16 @@ def main(src, out):
         root.remove(k)
         root.append(k)
 
-    # ---- package: workbook + the primary extract only (the Pavilion extract is not used)
     twb = etree.tostring(tree, xml_declaration=True, encoding="utf-8", pretty_print=True)
     twb = twb.replace(b"<?xml version='1.0' encoding='utf-8'?>", b"<?xml version='1.0' encoding='utf-8' ?>", 1)
     name = os.path.splitext(os.path.basename(out))[0]
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{name}.twb", twb)
-        hyper = "Data/Extracts/federated_14wc2mc1wc09dr1b4kqf30.hyper"
-        z.write(os.path.join(tmp, hyper), hyper)
+        for hyper in ("Data/Extracts/federated_14wc2mc1wc09dr1b4kqf30.hyper", "Data/Extracts/federated_00walea07guk6w1fe7zhg0.hyper"):
+            z.write(os.path.join(tmp, hyper), hyper)
     open(out.replace(".twbx", ".twb"), "wb").write(twb)
     shutil.rmtree(tmp)
-    print(f"built {out}: {len(S)} sheets, {len(PAGES)} dashboards, {sum(1 for f in R.fields.values() if f.is_calc)} calculations")
+    print(f"built {out}: {len(S)} sheets, {len(DASHBOARDS)} dashboards, {sum(1 for f in R.fields.values() if f.is_calc)} calculations")
     return R, S
 
 

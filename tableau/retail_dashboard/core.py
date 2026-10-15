@@ -12,6 +12,9 @@ from lxml import etree
 
 DS = "federated.14wc2mc1wc09dr1b4kqf30rnj8dg"
 DS_CAPTION = "Year+ (Retail_Primary_Sales_pre_processed)"
+PDS = "federated.00walea07guk6w1fe7zhg073gkbk"
+PDS_CAPTION = "Sales_Slabs_Unpivoted+ (Pavilion_Unpivoted)"
+DS_CAPTIONS = {DS: DS_CAPTION, PDS: PDS_CAPTION}
 
 # ---------------------------------------------------------------- palette
 C_DARK = "#0b4d33"      # header band / titles
@@ -51,7 +54,7 @@ class Field:
     """A column of the Retail data source (base field or calculation)."""
 
     def __init__(self, name, datatype, role, ftype, caption=None, formula=None,
-                 fmt=None, table="P"):
+                 fmt=None, table="P", ds=DS):
         self.name = name                # local name without brackets
         self.datatype = datatype        # string, real, integer, date, datetime, boolean
         self.role = role                # dimension / measure
@@ -59,7 +62,8 @@ class Field:
         self.caption = caption
         self.formula = formula          # resolved Tableau formula (None for base fields)
         self.fmt = fmt
-        self.table = table              # P (primary), T (monthly targets), Q (QTOD), B (branch targets), X (no table)
+        self.table = table              # P (primary), T (monthly targets), Q (QTOD), B (branch targets), S (SSA targets), X (none)
+        self.ds = ds
         self.deps = set()               # names of fields referenced
         self.params = set()             # parameter names referenced
 
@@ -130,9 +134,10 @@ class Registry:
         self._n = 0
 
     # --- registration -----------------------------------------------------
-    def base(self, name, datatype, role, ftype, caption=None, table="P"):
-        f = Field(name, datatype, role, ftype, caption=caption, table=table)
-        self.fields[name] = f
+    def base(self, name, datatype, role, ftype, caption=None, table="P", ds=DS):
+        f = Field(name, datatype, role, ftype, caption=caption, table=table, ds=ds)
+        f.key = name if ds == DS else f"{ds}|{name}"
+        self.fields[f.key] = f
         return f
 
     def param(self, name, caption, datatype, default, members=None, rng=None):
@@ -140,7 +145,7 @@ class Registry:
         self.params[name] = p
         return p
 
-    def calc(self, caption, formula, datatype="real", role=None, ftype=None, fmt=None, table=None):
+    def calc(self, caption, formula, datatype="real", role=None, ftype=None, fmt=None, table=None, ds=DS):
         if caption in self.by_caption:
             raise ValueError(f"duplicate calc caption: {caption}")
         self._n += 1
@@ -149,8 +154,9 @@ class Registry:
             role = "measure" if datatype in ("real", "integer") else "dimension"
         if ftype is None:
             ftype = "quantitative" if role == "measure" else "nominal"
-        f = Field(name, datatype, role, ftype, caption=caption, fmt=fmt)
-        f.formula, f.deps, f.params = self._resolve(formula)
+        f = Field(name, datatype, role, ftype, caption=caption, fmt=fmt, ds=ds)
+        f.key = name
+        f.formula, f.deps, f.params = self._resolve(formula, ds)
         # table = the logical table of the base fields it depends on
         tables = {self.fields[d].table for d in f.deps} - {"X"}
         if table:
@@ -165,7 +171,7 @@ class Registry:
         self.by_caption[caption] = f
         return f
 
-    def _resolve(self, formula):
+    def _resolve(self, formula, ds=DS):
         deps, params = set(), set()
 
         def tok(m):
@@ -173,7 +179,7 @@ class Registry:
             f = self.by_caption.get(cap)
             if f is None:
                 raise KeyError(f"unknown calc token {{{cap}}}")
-            deps.add(f.name)
+            deps.add(f.key)
             return f.ref
         out = re.sub(r"\{\{([^{}]+)\}\}", tok, formula)
         for m in re.finditer(r"\[Parameters\]\.\[([^\]]+)\]", out):
@@ -184,7 +190,10 @@ class Registry:
         stripped = re.sub(r"\[Parameters\]\.\[[^\]]+\]", "", out)
         for m in re.finditer(r"\[([^\[\]]+)\]", stripped):
             n = m.group(1)
-            if n in self.fields:
+            k = n if ds == DS else f"{ds}|{n}"
+            if k in self.fields:
+                deps.add(k)
+            elif n in self.fields and self.fields[n].is_calc:
                 deps.add(n)
             else:
                 raise KeyError(f"unknown field [{n}] in formula: {formula[:120]}")
@@ -231,4 +240,4 @@ def inst_xml(f, kind):
 
 
 def iref(f, kind):
-    return f"[{DS}].[{inst(f, kind)[0]}]"
+    return f"[{f.ds}].[{inst(f, kind)[0]}]"

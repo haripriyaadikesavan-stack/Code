@@ -26,13 +26,17 @@ are git-ignored.
 | Page | What it answers |
 |---|---|
 | Home | Headline KPIs, region table, monthly trend |
-| Executive | Are we on track? Sales vs last year and vs target, region table, branch achievement and growth |
-| Branches | Branch scorecard (replaces the 20+ per-branch dashboards), Wiser / Miluz Zeta by branch, ASM table |
-| Products | Families, Helios activity, product classification, top 25 materials, focus families by region |
-| Partners | Partner slabs, tier, RD/KRO, new / revival partners, top and at-risk partners, SSA |
-| Partner Targets | QTOD / ATOD partner targets vs achievement, annual and by quarter |
+| MTD | Month to date vs the same days last year, this month's target, yesterday's sales / OB, branch and ASM MTD tables, top partners |
+| Executive | Sales vs last year and vs target, region table, branch achievement and growth |
+| Regions | One dashboard per region (East, North, South, West1, West2), always filtered to that region |
+| Branches | Branch scorecard, Wiser / Miluz Zeta by branch, ASM table |
+| Products | Families, Helios activity, product classification, focus families by region, top 25 materials |
+| Partners | Slabs, tier, RD/KRO, new / revival partners, onboarded year, top and at-risk partners |
+| Target vs Achievement | Branch target vs achievement (monthly and yearly targets), branch x month heat map, partner targets (annual 100% / 108%, quarter, Wiser, Miluz Zeta) |
+| SSP | SSP target vs achievement, with vs without SSP, monthly trend, top SSP partners |
+| Pavilion | Pavilion type and classification slabs, minimum slab / total target / Wiser slab qualification, retailer app T&C |
 | Order Book | OB vs last year, sales-to-OB conversion, backlog by branch and age |
-| Explore | Any dimension (Region, Branch, ASM, Partner, Family, …) against all measures |
+| Explore | Any dimension against all measures |
 
 ## Filters (left panel, every page)
 
@@ -49,10 +53,12 @@ are git-ignored.
   - OB = `Type = OB`, dated by `Calendar Day`.
   - Backlog = `Type = Backlog`, the open orders. They are aged from `OrderCreationDate`.
 - **Last year:** the same dates one year earlier. Growth % compares against this.
-- **Monthly branch targets** (Master Targets File → Monthly Targets):
-  - They are **net**. Gross = net ÷ 0.83.
-  - "Pro-rated to date" counts the current month's target only up to today.
-- **Annual branch targets** (Branch Targets) are net.
+- **Monthly branch targets** (Monthly Targets sheet) are **net**. Gross = net ÷ 0.83.
+  "Full months" (default) counts each month's full target; "Pro-rated to date" counts the current month only up to today.
+- **Yearly branch targets** (Branch Targets sheet) are **net**. Gross = net ÷ 0.83.
 - **Partner targets** (QTOD and ATOD file) are **gross**. Net = gross × 0.83.
+- **SSP targets** are used as they are (as in the old workbook).
 - **New / revival partner:** the first sale is in the current year. The data starts two years back, so this also means no sales in the previous two years.
+- **Region filter:** applied as a sheet filter, so the region dashboards always show their own region.
+- **Pavilion:** shown as published in Pavilion_Unpivoted.xlsx (the slabs are text ranges); the filters do not apply.
 - **Row-level security:** the old *Branch RLS* user filter is rebuilt as two calculations, `Branch access (sales)` and `Branch access (partner targets)`. They use the same Tableau groups. They are applied to the partner-level pages (Partners, Partner Targets, Explore, Backlog partners), where the old workbook applied it.

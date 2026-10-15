@@ -1,69 +1,77 @@
 """Sheets and dashboards of the Retail dashboard."""
-from core import C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, C_TEXT
-from sheets import MN, MV, Sheet, kpi, nav, run, title_runs
+from core import C_MID, C_TARGET, PDS
+from sheets import ACH_SCALE, GROWTH_SCALE, MN, MV, Sheet, kpi, nav, run, title_runs, is_value
 
-PAGES = ["Home", "Executive", "Branches", "Products", "Partners", "Partner Targets", "Order Book", "Explore"]
-PARTNER_PAGES = {"Partners", "Partner Targets", "Explore"}     # row-level security applied here
+REGIONS = ["East", "North", "South", "West1", "West2"]
+# top navigation: (button label, dashboard name)
+NAV = [("Home", "Home"), ("MTD", "MTD"), ("Executive", "Executive"), ("Regions", "Region - East"),
+       ("Branches", "Branches"), ("Products", "Products"), ("Partners", "Partners"),
+       ("Target vs Ach", "Target vs Achievement"), ("SSP", "SSP"), ("Pavilion", "Pavilion"),
+       ("Order Book", "Order Book"), ("Explore", "Explore")]
+REGION_DASH = [f"Region - {r}" for r in REGIONS]
+DASHBOARDS = [d for _, d in NAV if not d.startswith("Region")] + REGION_DASH
 
 
 # ---------------------------------------------------------------- generic builders
-def has_value(R, measures):
-    """Show '(Mn)' etc. in the title only when the sheet shows money values."""
-    return any(R[m].fmt == "n#,##0.0;-#,##0.0" for m in measures)
+def F(R, x):
+    return x if not isinstance(x, str) else (R[x] if x in R.by_caption else R.fields[x])
 
 
 def table(R, name, title, dims, measures, sub=None, total=True, sort_by=None, top=None, nonnull="Has activity (agg)",
-          widths=None, color_by=None):
-    s = Sheet(R, name, title_runs(title, sub, param_units=has_value(R, measures)), "table")
-    drefs = []
-    for d in dims:
-        f = R[d] if d in R.by_caption else R.fields[d]
-        drefs.append(s.use(f, "dim"))
+          widths=None, scale=None, units=None, sort_dims=None):
+    caps = [m if isinstance(m, str) else None for m in measures]
+    if units is None:
+        units = any(c and is_value(R, c) for c in caps)
+    s = Sheet(R, name, title_runs(title, sub, param_units=units), "table")
+    drefs = [s.use(F(R, d), "dim") for d in dims]
     s.measures(measures)
     s.rows = " / ".join(drefs)
     s.rows_total = total
-    s.cols = MN
-    s.encodings.append(("text", MV))
-    if color_by:
-        s.encodings.append(("color", s.use(color_by, "usrn")))
+    s.cols = s.mn
+    s.encodings.append(("text", s.mv))
+    if scale:
+        cap, sc = scale
+        ref = s.use(cap, "usr")
+        s.encodings.append(("color", ref))
+        s.scales.append((ref, sc))
     if nonnull:
         s.nonnull(nonnull)
     if top:
         n, by = top
-        f = R[dims[0]] if dims[0] in R.by_caption else R.fields[dims[0]]
-        s.top_n(drefs[0], f, n, by)
+        s.top_n(drefs[0], F(R, dims[0]), n, by)
     if sort_by:
-        s.sort_by(drefs[-1], s.use(sort_by, "usr"))
-    s.widths.append((MN, 78))
+        cap, *direction = sort_by if isinstance(sort_by, tuple) else (sort_by,)
+        for i in (sort_dims if sort_dims is not None else [len(drefs) - 1]):
+            s.sort_by(drefs[i], s.use(cap, "usr"), direction=(direction[0] if direction else "DESC"))
     for i, w in enumerate(widths or []):
         s.widths.append((drefs[i], w))
     s.cell_align = "right"
+    s.fit = "fit-width"
     return s
 
 
-def bars(R, name, title, dim, measures, sub=None, color_by=None, sort_by=None, top=None, horizontal=True,
-         nonnull="Has activity (agg)", exclude_null=False, color=None):
-    """Bar chart; several measures -> side by side bars coloured by Measure Names."""
-    s = Sheet(R, name, title_runs(title, sub, param_units=has_value(R, measures)), "chart")
-    f = R[dim] if dim in R.by_caption else R.fields[dim]
+def hbar(R, name, title, dim, measure, sub=None, scale=None, top=None, nonnull="Has sales (agg)", sort=True,
+         exclude_null=False, color=None, vertical=False):
+    """Single-measure bar chart, sorted, labelled; value axis hidden.
+    scale: ('Ach %' | 'Growth %', SCALE) colours bars by that measure."""
+    s = Sheet(R, name, title_runs(title, sub, param_units=is_value(R, measure)), "chart")
+    f = F(R, dim)
     dref = s.use(f, "dim")
-    if len(measures) > 1:
-        s.measures(measures)
-        val, inner = MV, MN
-        s.encodings.append(("color", MN))
-    else:
-        val, inner = s.use(measures[0], "usr"), None
-        if color_by:
-            s.encodings.append(("color", s.use(color_by, "usrn")))
-        else:
-            s.mark_color = color or C_MID
+    val = s.use(measure, "usr")
     s.encodings.append(("text", val))
-    if horizontal:
-        s.rows = f"({dref} / {inner})" if inner else dref
-        s.cols = val
+    if scale:
+        cap, sc = scale
+        cref = s.use(cap, "usr")
+        s.encodings.append(("color", cref))
+        s.scales.append((cref, sc))
     else:
-        s.cols = f"({dref} / {inner})" if inner else dref
-        s.rows = val
+        s.mark_color = color or C_MID
+    if vertical:
+        s.cols, s.rows = dref, val
+        s.hide_axis.append((val, "rows"))
+    else:
+        s.rows, s.cols = dref, val
+        s.hide_axis.append((val, "cols"))
     s.mark = "Bar"
     if nonnull:
         s.nonnull(nonnull)
@@ -72,227 +80,360 @@ def bars(R, name, title, dim, measures, sub=None, color_by=None, sort_by=None, t
     if top:
         n, by = top
         s.top_n(dref, f, n, by)
-    if sort_by:
-        s.sort_by(dref, s.use(sort_by, "usr"), shelf="rows" if horizontal else "cols")
+    if sort:
+        s.sort_by(dref, val, shelf="cols" if vertical else "rows")
     return s
 
 
-def trend(R, name, title, measures, sub=None, mark="Line", dim="Month"):
-    s = Sheet(R, name, title_runs(title, sub, param_units=has_value(R, measures)), "chart")
+def trend(R, name, title, measures, sub=None, dim="Month", nonnull="Has activity (agg)"):
+    """Two lines (e.g. this year vs last year) by month or day; value axis hidden."""
+    s = Sheet(R, name, title_runs(title, sub, param_units=is_value(R, measures[0])), "chart")
     dref = s.use(dim, "dim")
     s.measures(measures)
-    s.encodings.append(("color", MN))
-    s.cols = dref
-    s.rows = MV
-    s.mark = mark
-    s.nonnull("Has activity (agg)")
+    s.encodings.append(("color", s.mn))
+    s.cols, s.rows = dref, s.mv
+    s.mark = "Line"
+    s.hide_axis.append((s.mv, "rows"))
+    s.nonnull(nonnull)
     s.exclude_null(dref, R[dim])
-    if mark == "Bar":
-        s.cols = f"({dref} / {MN})"
-        s.encodings.append(("text", MV))
     return s
 
 
-def text_sheet(R, name, runs):
-    """A sheet that only shows formatted text (used for highlights)."""
-    s = Sheet(R, name, "", "kpi")
-    s.label = runs
-    s.use("Nav count", "usr")
-    s.encodings.append(("text", s.use("Nav count", "usr")))
+def heat(R, name, title, rowdim, coldim, measure, scale, sub=None, nonnull="Has sales (agg)"):
+    s = Sheet(R, name, title_runs(title, sub, param_units=False), "table")
+    r = s.use(F(R, rowdim), "dim")
+    c = s.use(F(R, coldim), "dim")
+    v = s.use(measure, "usr")
+    s.rows, s.cols = r, c
+    s.mark = "Square"
+    s.encodings += [("color", v), ("text", v)]
+    s.scales.append((v, scale))
+    s.nonnull(nonnull)
+    s.exclude_null(c, F(R, coldim))
+    s.cell_align = "center"
+    s.fit = "fit-width"
     return s
+
+
+def kpi_set(R, prefix):
+    """The standard KPI cards (two values max per card)."""
+    return [
+        kpi(R, f"{prefix}Sales", "Sales", "Sales", ("", "Growth text")),
+        kpi(R, f"{prefix}Achievement", "Achievement vs target", "Ach %", ("Target  ", "Target")),
+        kpi(R, f"{prefix}Yearly target", "Yearly target", "Yearly target", ("Achieved  ", "Yearly Ach %")),
+        kpi(R, f"{prefix}Run-rate", "Monthly run-rate", "Current run-rate / month", ("Required  ", "Required run-rate / month")),
+        kpi(R, f"{prefix}Order book", "Order book (OB)", "OB", ("", "OB growth text")),
+        kpi(R, f"{prefix}Backlog", "Open backlog", "Backlog", ("Older than 60 days  ", "Backlog over 60 days")),
+        kpi(R, f"{prefix}Partners", "Active partners", "Active partners", ("New / revival  ", "New / revival partners")),
+        kpi(R, f"{prefix}Data", "Data as of", "Data as of", ("Period  ", "Period text")),
+    ]
 
 
 # ---------------------------------------------------------------- the sheets
 def build_sheets(R):
+    """Returns {name: Sheet}; each sheet gets .scope: 'P' / 'Q' / 'S' / 'PV' / 'nav' / 'region:X' and .rls."""
     S = {}
 
-    def add(s):
+    def add(s, scope="P", rls=None):
+        s.scope, s.rls = scope, rls
         S[s.name] = s
         return s
 
-    for p in PAGES:
-        add(nav(R, p))
+    for label, dash in NAV:
+        add(nav(R, dash, label), "nav")
+    for r in REGIONS:
+        add(nav(R, f"Region - {r}", f"Region {r}"), "nav")
 
-    # ---- KPI cards (shared across pages)
-    add(kpi(R, "K | Sales", "Sales", "Sales", [("Last year  ", "Sales PY", None), (None, "Growth text", None)]))
-    add(kpi(R, "K | Achievement", "Achievement vs target", "Ach %",
-            [("Target  ", "Target", None), ("Gap  ", "Gap to target", None)], units=False))
-    add(kpi(R, "K | Annual target", "Annual target", "Annual target",
-            [("Achieved  ", "Annual Ach %", None), ("Balance  ", "Balance to annual target", None)]))
-    add(kpi(R, "K | Run-rate", "Monthly run-rate", "Current run-rate / month",
-            [("Required to hit annual target  ", "Required run-rate / month", None)]))
-    add(kpi(R, "K | Order book", "Order book (OB)", "OB", [("Last year  ", "OB PY", None), ("Growth  ", "OB growth %", None)]))
-    add(kpi(R, "K | Backlog", "Open backlog", "Backlog", [("Older than 60 days  ", "Backlog over 60 days", None)]))
-    add(kpi(R, "K | Partners", "Active partners", "Active partners",
-            [("Last year  ", "Active partners PY", None), ("New / revival  ", "New / revival partners", None)], units=False))
-    add(kpi(R, "K | Per partner", "Sales per active partner", "Sales per partner",
-            [("New / revival partner sales  ", "New partner sales", None)]))
-    add(kpi(R, "K | Data", "Data as of", "Data as of", [("Period  ", "Period text", None)], units=False))
-    add(kpi(R, "K | Sales to OB", "Sales to OB", "Sales to OB %", [("Sales  ", "Sales", None), ("OB  ", "OB", None)], units=False))
-    add(kpi(R, "K | Partner target", "Partner annual target (QTOD/ATOD)", "Partner annual target",
-            [("Achieved  ", "Partner Ach %", None), ("Balance  ", "Partner balance", None)]))
+    # ---- shared KPIs
+    for k in kpi_set(R, "K | "):
+        add(k)
+    add(kpi(R, "K | Wiser", "Wiser sales", "Wiser sales", ("Achieved  ", "Wiser Ach %")))
+    add(kpi(R, "K | Zeta", "Miluz Zeta sales", "Zeta sales", ("Achieved  ", "Zeta Ach %")))
+    add(kpi(R, "K | Per partner", "Sales per active partner", "Sales per partner", ("New / revival partner sales  ", "New partner sales")))
+    add(kpi(R, "K | New partners", "New / revival partners", "New / revival partners", ("Their sales  ", "New partner sales"), units=False))
+    add(kpi(R, "K | Sales to OB", "Sales to OB", "Sales to OB %", ("Sales  ", "Sales")))
+    add(kpi(R, "K | SSP sales", "Sales through SSPs", "SSP sales", ("Growth  ", "SSP growth %")))
+    add(kpi(R, "K | SSP target", "SSP target", "SSP target", ("Achieved  ", "SSP Ach %")))
+    add(kpi(R, "K | Partner target", "Partner target (QTOD / ATOD)", "Partner target", ("Achieved  ", "Partner Ach %")), "Q", "Q")
 
-    # ---- Executive
+    # ---- Home / Executive
     add(trend(R, "E | Monthly trend", "Monthly sales - this year vs last year", ["Sales", "Sales PY"],
-              "Green = selected period, grey = same period last year"))
+              "Green = this year, grey = same period last year"))
     add(trend(R, "E | Sales vs target", "Monthly sales vs target", ["Sales", "Target"],
-              "Target = monthly branch targets, pro-rated for the current month", mark="Bar"))
-    add(table(R, "E | Region table", "Region performance", ["Region (clean)"],
-              ["Sales", "Sales PY", "Growth %", "Target", "Ach %", "Annual target", "Annual Ach %", "OB", "Backlog", "Active partners"],
+              "Green = sales, amber = monthly branch target", nonnull="Has sales (agg)"))
+    add(table(R, "E | Region table", "Region performance", ["Region"],
+              ["Sales", "Sales PY", "Growth %", "Target", "Ach %", "Yearly target", "Yearly Ach %", "OB", "Active partners"],
               widths=[90]))
-    add(bars(R, "E | Branch achievement", "Branch achievement vs target", "Branch (clean)", ["Ach %"],
-             "Sorted by achievement; colour = achievement band", color_by="Ach band", sort_by="Ach %", nonnull="Ach %"))
-    add(bars(R, "E | Branch growth", "Branch growth vs last year", "Branch (clean)", ["Growth %"],
-             "Sorted by growth; colour = growing / declining", color_by="Growth band", sort_by="Growth %", nonnull="Has sales (agg)"))
+    add(hbar(R, "E | Branch achievement", "Branch achievement vs target", "Branch", "Ach %",
+             "Red < 75%, amber 75-100%, green above 100%", scale=("Ach %", ACH_SCALE), nonnull="Ach %"))
+    add(hbar(R, "E | Branch growth", "Branch growth vs last year", "Branch", "Growth %",
+             "Green = growing, red = declining", scale=("Growth %", GROWTH_SCALE)))
+
+    # ---- MTD
+    add(kpi(R, "M | Sales", "MTD sales", "MTD sales", ("", "MTD growth text")))
+    add(kpi(R, "M | Achievement", "MTD achievement", "MTD Ach %", ("Month target  ", "MTD target")))
+    add(kpi(R, "M | OB", "MTD order book", "MTD OB", ("Yesterday  ", "OB yesterday")))
+    add(kpi(R, "M | Yesterday", "Yesterday's sales", "Sales yesterday", ("Month  ", "Month text")))
+    add(trend(R, "M | Daily trend", "Day-wise sales - this month vs same month last year", ["MTD sales", "MTD sales LY"],
+              dim="Day", nonnull="Has MTD activity (agg)"))
+    add(table(R, "M | Branch table", "MTD branch performance", ["Region", "Branch"],
+              ["MTD sales", "MTD sales LY", "MTD growth %", "MTD target", "MTD Ach %", "MTD OB",
+               "MTD Wiser Ach %", "MTD Zeta Ach %", "MTD active partners"],
+              widths=[70, 90], nonnull="Has MTD activity (agg)"))
+    add(table(R, "M | ASM table", "MTD ASM performance", ["Region", "ASM"],
+              ["MTD sales", "MTD sales LY", "MTD growth %", "MTD OB", "MTD active partners"],
+              widths=[70, 180], nonnull="Has MTD activity (agg)", sort_by="MTD sales"))
+    add(hbar(R, "M | Family", "MTD sales by family", "Family", "MTD sales", top=(15, "Sales MTD (row)"),
+             nonnull="Has MTD activity (agg)"))
+    add(table(R, "M | Partners", "MTD top 20 partners", ["Partner", "Branch"], ["MTD sales", "MTD OB"],
+              sort_by="MTD sales", top=(20, "Sales MTD (row)"), widths=[260, 80], total=False,
+              nonnull="Has MTD activity (agg)"), "P", "P")
 
     # ---- Branches
-    add(table(R, "B | Branch table", "Branch scorecard", ["Region (clean)", "Branch (clean)"],
-              ["Sales", "Sales PY", "Growth %", "Target", "Ach %", "Gap to target", "Annual target", "Annual Ach %",
-               "OB", "Backlog", "Active partners", "New / revival partners"], widths=[70, 90]))
-    add(table(R, "B | Focus families", "Focus families by branch - Wiser and Miluz Zeta", ["Region (clean)", "Branch (clean)"],
+    add(table(R, "B | Branch table", "Branch scorecard", ["Region", "Branch"],
+              ["Sales", "Sales PY", "Growth %", "Target", "Ach %", "Gap to target", "Yearly target", "Yearly Ach %",
+               "OB", "Active partners"], widths=[70, 90]))
+    add(table(R, "B | Focus families", "Focus families by branch - Wiser and Miluz Zeta", ["Region", "Branch"],
               ["Wiser sales", "Wiser target", "Wiser Ach %", "Zeta sales", "Zeta target", "Zeta Ach %"], widths=[70, 90]))
-    add(table(R, "B | ASM table", "ASM performance", ["Region (clean)", "ASM"],
+    add(table(R, "B | ASM table", "ASM performance", ["Region", "ASM"],
               ["Sales", "Sales PY", "Growth %", "Share of sales %", "Active partners", "New / revival partners", "Sales per partner"],
-              widths=[70, 150], nonnull="Has sales (agg)"))
-    s = add(Sheet(R, "B | Branch by month", title_runs("Branch sales by month"), "table"))
-    br = s.use("Branch (clean)", "dim")
-    mo = s.use("Month", "dim")
-    sv = s.use("Sales", "usr")
-    s.rows, s.cols, s.rows_total = br, mo, True
-    s.encodings.append(("text", sv))
-    s.nonnull("Sales")
-    s.cell_align = "right"
-    s.exclude_null(mo, R["Month"])
+              widths=[70, 180], nonnull="Has sales (agg)", sort_by="Sales"))
 
     # ---- Products
-    add(bars(R, "P | Family bars", "Sales by family - this year vs last year", "Family (clean)", ["Sales", "Sales PY"],
-             sort_by="Sales", nonnull="Has sales (agg)"))
-    add(table(R, "P | Family table", "Family performance", ["Family (clean)"],
-              ["Sales", "Sales PY", "Growth %", "Share of sales %", "Quantity"], sort_by="Sales", widths=[150],
+    add(hbar(R, "P | Family bars", "Sales by family", "Family", "Sales", "Top 15; green = growing, red = declining vs last year",
+             scale=("Growth %", GROWTH_SCALE), top=(15, "Sales CY (row)")))
+    add(table(R, "P | Family table", "Family performance", ["Family"],
+              ["Sales", "Sales PY", "Growth %", "Share of sales %", "Quantity"], sort_by="Sales", widths=[170],
               nonnull="Has sales (agg)"))
-    add(bars(R, "P | Activity", "Sales by activity (Helios code)", "Helios Code", ["Sales", "Sales PY"],
-             sort_by="Sales", nonnull="Has sales (agg)", exclude_null=True))
-    add(bars(R, "P | Classification", "Sales by product classification", "Classification (Sheet1)", ["Sales", "Sales PY"],
-             sort_by="Sales", nonnull="Has sales (agg)", exclude_null=True))
+    add(hbar(R, "P | Activity", "Sales by activity (Helios code)", "Helios Code", "Sales", scale=("Growth %", GROWTH_SCALE),
+             exclude_null=True))
+    add(hbar(R, "P | Classification", "Sales by product classification", "Classification (Sheet1)", "Sales",
+             scale=("Growth %", GROWTH_SCALE), exclude_null=True))
+    add(table(R, "P | Focus by region", "Focus families by region", ["Region"],
+              ["Wiser sales", "Wiser target", "Wiser Ach %", "Zeta sales", "Zeta target", "Zeta Ach %"], widths=[90]))
     add(table(R, "P | Top SKUs", "Top 25 materials", ["MaterialDescription"],
               ["Sales", "Sales PY", "Growth %", "Share of sales %", "Quantity"], sort_by="Sales",
-              top=(25, "Sales CY (row)"), widths=[260], nonnull="Has sales (agg)", total=False))
-    add(table(R, "P | Focus by region", "Focus families by region", ["Region (clean)"],
-              ["Wiser sales", "Wiser target", "Wiser Ach %", "Zeta sales", "Zeta target", "Zeta Ach %"], widths=[90]))
+              top=(25, "Sales CY (row)"), widths=[320], nonnull="Has sales (agg)", total=False))
 
     # ---- Partners (row-level security)
-    add(bars(R, "Pa | Slabs", "Partners by sales slab", "Partner slab", ["Partners (count)"],
-             "Sales in the selected period (INR)", nonnull="Partners (count)", exclude_null=True, horizontal=True))
-    S["Pa | Slabs"].title = title_runs("Partners by sales slab", "Partner sales in the selected period", param_units=False)
-    add(bars(R, "Pa | Tier", "Sales by tier", "Tier Category", ["Sales", "Sales PY"], sort_by="Sales",
-             nonnull="Has sales (agg)", exclude_null=True))
-    add(bars(R, "Pa | Partner type", "Sales by partner type", "RD/KRO", ["Sales", "Sales PY"], sort_by="Sales",
-             nonnull="Has sales (agg)", exclude_null=True))
-    s = add(trend(R, "Pa | New partners", "New / revival partners by month", ["New / revival partners"],
-                  "First sale this year (no sales in the previous two years)", mark="Bar"))
-    s.title = title_runs("New / revival partners by month", "First sale this year (no sales in the previous two years)", param_units=False)
-    add(table(R, "Pa | Top partners", "Top 25 partners", ["Partner (sales)", "Branch (clean)", "Partner status"],
+    s = add(hbar(R, "Pa | Slabs", "Partners by sales slab", "Partner slab", "Partners", "Partner sales in the selected period",
+                 nonnull="Partners", exclude_null=True, sort=False), "P", "P")
+    add(hbar(R, "Pa | Tier", "Sales by tier", "Tier Category", "Sales", scale=("Growth %", GROWTH_SCALE), exclude_null=True), "P", "P")
+    add(hbar(R, "Pa | Partner type", "Sales by partner type", "RD/KRO", "Sales", scale=("Growth %", GROWTH_SCALE), exclude_null=True), "P", "P")
+    add(hbar(R, "Pa | New partners", "New / revival partners by month", "Month", "New / revival partners",
+             "First sale this year (no sales in the previous two years)", nonnull="New / revival partners",
+             exclude_null=True, sort=False, vertical=True), "P", "P")
+    add(hbar(R, "Pa | Onboarded", "Partners by onboarded year", "Onboarded Year (Partner Master Data)", "Onboarded partners",
+             "From the Partner Master", nonnull=None, exclude_null=True, sort=False, vertical=True), "P", "P")
+    add(table(R, "Pa | Top partners", "Top 25 partners", ["Partner", "Branch", "Partner status"],
               ["Sales", "Sales PY", "Growth %", "Share of sales %"], sort_by="Sales", top=(25, "Sales CY (row)"),
-              widths=[240, 80, 90], total=False, nonnull="Has sales (agg)"))
-    add(table(R, "Pa | At-risk partners", "Largest last-year partners now declining", ["Partner (sales)", "Branch (clean)"],
-              ["Sales PY", "Sales", "Growth", "Growth %"], sort_by="Growth", top=(25, "Sales PY (row)"),
-              widths=[240, 80], total=False, nonnull="Has sales (agg)", color_by="Growth band"))
-    add(table(R, "Pa | SSA", "With vs without SSA", ["SSA group", "SSA"],
-              ["Sales", "Sales PY", "Growth %", "Active partners", "Sales per partner"], widths=[90, 160]))
+              widths=[300, 90, 110], total=False, nonnull="Has sales (agg)"), "P", "P")
+    add(table(R, "Pa | At-risk partners", "Largest last-year partners now declining", ["Partner", "Branch"],
+              ["Sales PY", "Sales", "Growth", "Growth %"], sort_by=("Growth", "ASC"), top=(25, "Sales PY (row)"),
+              widths=[300, 90], total=False, nonnull="Has sales (agg)", scale=("Growth %", GROWTH_SCALE)), "P", "P")
 
-    # ---- Partner targets (QTOD / ATOD)
-    add(table(R, "T | Annual", "Partner target vs achievement - annual", ["Target partner branch", "Target partner"],
-              ["Partner annual target", "Sales", "Partner Ach %", "Partner balance", "Partner Wiser target", "Wiser sales",
-               "Partner Wiser Ach %", "Partner Zeta target", "Zeta sales", "Partner Zeta Ach %"],
-              nonnull="Has partner target", widths=[70, 240], color_by="Partner Ach band"))
-    add(table(R, "T | Quarterly", "Partner target vs achievement - by quarter", ["Target partner branch", "Target partner"],
-              ["Q1 target", "Q1 sales", "Q1 Ach %", "Q2 target", "Q2 sales", "Q2 Ach %",
-               "Q3 target", "Q3 sales", "Q3 Ach %", "Q4 target", "Q4 sales", "Q4 Ach %"],
-              nonnull="Has partner target", widths=[70, 240]))
+    # ---- Target vs Achievement
+    add(table(R, "T | Branch", "Branch target vs achievement", ["Region", "Branch"],
+              ["Target", "Sales", "Ach %", "Gap to target", "Yearly target", "Yearly Ach %", "Balance to yearly target",
+               "Wiser Ach %", "Zeta Ach %"], widths=[70, 90], nonnull="Has sales (agg)"))
+    add(heat(R, "T | Month heat", "Achievement by branch and month", "Branch", "Month", "Ach %", ACH_SCALE,
+             "Red < 75%, amber 75-100%, green above 100%"))
+    add(table(R, "T | Partner branches", "Partner targets by branch", ["Target partner branch"],
+              ["Partner target", "Partner achieved", "Partner Ach %", "Partner balance"],
+              sub="View selected in 'Target view' (annual 100% / 108%, quarter, Wiser, Miluz Zeta)",
+              nonnull="Has partner target", widths=[90], scale=("Partner Ach %", ACH_SCALE)), "Q", "Q")
+    add(table(R, "T | Partners", "Partner target vs achievement", ["Target partner branch", "Target partner"],
+              ["Partner target", "Partner achieved", "Partner Ach %", "Partner balance"],
+              sub="Partner targets are gross (QTOD / ATOD file); Net = gross x 0.83",
+              nonnull="Has partner target", widths=[80, 320], scale=("Partner Ach %", ACH_SCALE),
+              sort_by="Partner target"), "Q", "Q")
 
-    # ---- Order book & backlog
+    # ---- SSP
+    add(table(R, "S | SSP table", "SSP target vs achievement", ["SSP", "Branch (SSA Targets)"],
+              ["SSP target", "SSP sales", "SSP Ach %", "SSP sales PY", "SSP growth %"],
+              sub="Sales of partners mapped to the SSP; SSP targets are used as they are",
+              nonnull="SSP target", widths=[200, 90], scale=("SSP Ach %", ACH_SCALE), total=False), "S")
+    add(table(R, "S | With vs without", "With vs without SSP", ["SSA group"],
+              ["Sales", "Sales PY", "Growth %", "Share of sales %", "Active partners", "Sales per partner"], widths=[120]))
+    add(trend(R, "S | Trend", "Monthly sales through SSPs - this year vs last year", ["SSP sales", "SSP sales PY"]))
+    s = add(table(R, "S | Partners", "Top 25 SSP partners", ["SSA", "Partner", "Branch"],
+                  ["Sales", "Sales PY", "Growth %"], sort_by="Sales", top=(25, "SSA sales CY (row)"),
+                  widths=[160, 300, 80], total=False, nonnull="Has sales (agg)"), "P", "P")
+    s.member_filter("SSA group", "With SSP")
+
+    # ---- Order book
     add(trend(R, "O | OB trend", "Monthly order book - this year vs last year", ["OB", "OB PY"]))
-    add(table(R, "O | OB by branch", "Order book and backlog by branch", ["Region (clean)", "Branch (clean)"],
+    add(hbar(R, "O | Backlog ageing", "Open backlog by age", "Backlog ageing", "Backlog", nonnull="Backlog",
+             exclude_null=True, sort=False, color=C_TARGET))
+    add(table(R, "O | OB by branch", "Order book and backlog by branch", ["Region", "Branch"],
               ["OB", "OB PY", "OB growth %", "Sales", "Sales to OB %", "Backlog", "Backlog over 60 days"], widths=[70, 90]))
-    add(bars(R, "O | Backlog ageing", "Open backlog by age", "Backlog ageing", ["Backlog"], nonnull="Backlog",
-             exclude_null=True, color=C_TARGET))
-    add(table(R, "O | Backlog partners", "Top 20 partners by open backlog", ["Partner (sales)", "Branch (clean)"],
+    add(table(R, "O | Backlog partners", "Top 20 partners by open backlog", ["Partner", "Branch"],
               ["Backlog", "Backlog over 60 days", "Sales"], sort_by="Backlog", top=(20, "Backlog (row)"),
-              widths=[240, 80], total=False, nonnull="Backlog"))
+              widths=[300, 90], total=False, nonnull="Backlog"), "P", "P")
 
     # ---- Explore
-    add(table(R, "X | Explore table", "Explore", ["Explore by"],
-              ["Sales", "Sales PY", "Growth %", "Share of sales %", "OB", "Backlog", "Active partners", "Quantity"],
-              sort_by="Sales", widths=[240]))
-    S["X | Explore table"].title = (run("Explore by ", C_DARK, 11, True) + run("<[Parameters].[p Dim]>", C_DARK, 11, True)
-                                    + run(" (", C_DARK, 11, True) + run("<[Parameters].[p Units]>", C_DARK, 11, True) + run(")", C_DARK, 11, True))
-    add(bars(R, "X | Explore bars", "Top 30", "Explore by", ["Sales", "Sales PY"], sort_by="Sales",
-             top=(30, "Sales CY (row)"), nonnull="Has sales (agg)"))
+    s = add(table(R, "X | Explore table", "Explore", ["Explore by"],
+                  ["Sales", "Sales PY", "Growth %", "Share of sales %", "OB", "Backlog", "Active partners", "Quantity"],
+                  sort_by="Sales", widths=[300]), "P", "P")
+    s.title = (run("Explore by ", "#0b4d33", 11, True) + run("<[Parameters].[p Dim]>", "#0b4d33", 11, True)
+               + run(" (", "#0b4d33", 11, True) + run("<[Parameters].[p Units]>", "#0b4d33", 11, True) + run(")", "#0b4d33", 11, True))
+    add(hbar(R, "X | Explore bars", "Top 30 by sales", "Explore by", "Sales", scale=("Growth %", GROWTH_SCALE),
+             top=(30, "Sales CY (row)")), "P", "P")
 
-    # row-level security on partner-level sheets
+    # ---- Pavilion (published summary tables)
+    pf = lambda n: R.fields[f"{PDS}|{n}"]
+    MS, PT, RA, SC, TT, WS = ("(Minimum!Slab!Achievement)", "(Pavilion!Type!Summary)", "(Retailer!App!TnC!Acceptance)",
+                              "(Sales!Classification!Summary)", "(Total!Target!Achievement)", "(Wiser!Slabs!Unpivoted)")
+    s = add(table(R, "PV | Type", "Pavilions by type", [pf("Pavilion Type"), pf(f"Sum of YTD Slab 2025 {PT}"), pf("Sum of YTD Slab 2026")],
+                  [(pf("Count of 2026 Classification"), "sum")], total=False, nonnull=None, widths=[110, 120, 120], units=False,
+                  sort_by=("Type row order", "ASC"), sort_dims=[0]), "PV")
+    s = add(table(R, "PV | Classification", "Pavilions by classification",
+                  [pf("Classification"), pf("Sum of YTD Slab 2025"), pf(f"Sum of YTD Slab 2026 {SC}")],
+                  [(pf(f"Count of 2026 Classification {SC}"), "sum"), (pf(f"2025-26 Growth % {SC}"), "sum")],
+                  total=False, nonnull=None, widths=[110, 120, 120], units=False, sort_by=("Class row order", "ASC"), sort_dims=[0]), "PV")
+    s = add(table(R, "PV | Min slab", "Minimum slab achievement by region", [pf(f"Zone/Region {MS}")],
+                  [(pf(f"No. of KRO {MS}"), "sum"), (pf(f"No. of RO {MS}"), "sum"), (pf("No of KRO Achieved"), "sum"),
+                   (pf("No. of RO Achieved"), "sum"), "Min slab qualifier %"], nonnull=None, widths=[100], units=False), "PV")
+    s.member_filter(pf(f"Row Type {MS}"), "Region")
+    s = add(table(R, "PV | Total target", "Total target achievement by region", [pf(f"Zone/Region {TT}")],
+                  [(pf(f"No. of KRO {TT}"), "sum"), (pf(f"No. of RO {TT}"), "sum"), (pf(f"No of KRO Achieved {TT}"), "sum"),
+                   (pf(f"No. of RO Achieved {TT}"), "sum"), "Total target qualifier %"], nonnull=None, widths=[100], units=False), "PV")
+    s.member_filter(pf(f"Row Type {TT}"), "Region")
+    s = add(table(R, "PV | App T&C", "Retailer app T&C acceptance", [pf(f"Zone/Region {RA}")],
+                  [(pf("Total no. of RO Pavilions"), "sum"), (pf("Accepted"), "sum"), (pf("Pending"), "sum"), "Acceptance %"],
+                  nonnull=None, widths=[100], units=False), "PV")
+    s.member_filter(pf(f"Row Type {RA}"), "Region")
+    s = add(table(R, "PV | Sales slabs", "Sales slabs by ASM - 2025 vs 2026",
+                  [pf("Zone/Region"), pf("Sales Manager / Entity"), pf("Branch"), pf("2025 Sales Slab"), pf("2026 Sales Slab")],
+                  [(pf("2025-26 Growth %"), "sum")], total=False, nonnull=None, widths=[80, 200, 70, 120, 120], units=False,
+                  sort_by=("Slab row order", "ASC"), sort_dims=[0, 1]), "PV")
+    s = add(table(R, "PV | Wiser slabs", "Wiser slab achievement by ASM",
+                  [pf(f"Zone/Region {WS}"), pf(f"Sales Manager / Entity {WS}"), pf(f"Branch {WS}")],
+                  [(pf("No. of KRO"), "sum"), (pf("No. of RO"), "sum"), (pf("No of KRO > 1 lac"), "sum"),
+                   (pf("No. of RO > 25K"), "sum"), "Wiser qualifier %"], nonnull=None, widths=[90, 200, 70], units=False), "PV")
+    s.member_filter(pf(f"Row Type {WS}"), "ASM")
+
+    # ---- Region dashboards (fixed region filter, like the old regional dashboards)
+    for reg in REGIONS:
+        p = f"{reg} | "
+        for k in kpi_set(R, p)[:5]:
+            add(k, f"region:{reg}")
+        add(trend(R, p + "Trend", f"{reg} - monthly sales, this year vs last year", ["Sales", "Sales PY"]), f"region:{reg}")
+        add(table(R, p + "Branches", f"{reg} - branch performance", ["Branch"],
+                  ["Sales", "Sales PY", "Growth %", "Target", "Ach %", "Yearly target", "Yearly Ach %", "OB", "Active partners"],
+                  widths=[100]), f"region:{reg}")
+        add(hbar(R, p + "Families", f"{reg} - sales by family", "Family", "Sales", "Top 12; green = growing, red = declining",
+                 scale=("Growth %", GROWTH_SCALE), top=(12, "Sales CY (row)")), f"region:{reg}")
+        add(table(R, p + "Focus", f"{reg} - Wiser and Miluz Zeta by branch", ["Branch"],
+                  ["Wiser sales", "Wiser target", "Wiser Ach %", "Zeta sales", "Zeta target", "Zeta Ach %"], widths=[100]), f"region:{reg}")
+        add(table(R, p + "ASM", f"{reg} - ASM performance", ["ASM"],
+                  ["Sales", "Sales PY", "Growth %", "Active partners", "New / revival partners"], widths=[200],
+                  nonnull="Has sales (agg)", sort_by="Sales"), f"region:{reg}")
+        add(table(R, p + "Top partners", f"{reg} - top 10 partners", ["Partner", "Branch"],
+                  ["Sales", "Sales PY", "Growth %", "Share of sales %"], sort_by="Sales", top=(10, "Sales CY (row)"),
+                  widths=[300, 90], total=False, nonnull="Has sales (agg)"), f"region:{reg}")
+
+    # ---- filters: region selection, fixed regions, row-level security
     for name, s in S.items():
-        if name.startswith(("Pa |", "X |", "O | Backlog partners")):
+        if s.scope in ("P", "S"):
+            s.bool_filter("Region selected", context=True)
+        elif s.scope == "Q":
+            s.bool_filter("Target partner region selected", context=True)
+        elif s.scope.startswith("region:"):
+            s.member_filter(R.fields["Zone"], s.scope.split(":")[1])
+        if s.rls == "P":
             s.bool_filter("Branch access (sales)", context=True)
-        if name.startswith("T |") or name == "K | Partner target":
+        elif s.rls == "Q":
             s.bool_filter("Branch access (partner targets)", context=True)
     return S
 
 
 # ---------------------------------------------------------------- dashboards
-SIDEBAR_PARAMS = [("p Period", "compact"), ("p Start", "datetime"), ("p End", "datetime"), ("p Measure", "compact"),
-                  ("p Units", "compact"), ("p Region", "compact"), ("p Branch", "compact"), ("p Family", "compact"),
-                  ("p Channel", "compact"), ("p Basis", "compact")]
+BASE_PARAMS = [("p Period", "compact"), ("p Start", "datetime"), ("p End", "datetime"), ("p Measure", "compact"),
+               ("p Units", "compact"), ("p Region", "compact"), ("p Branch", "compact"), ("p Family", "compact"),
+               ("p Channel", "compact"), ("p Basis", "compact")]
+NO_PERIOD = [p for p in BASE_PARAMS if p[0] not in ("p Period", "p Start", "p End", "p Basis")]
+
+
+def params_for(dash):
+    if dash == "MTD":
+        return NO_PERIOD
+    if dash == "Pavilion":
+        return []
+    if dash.startswith("Region - "):
+        return [p for p in BASE_PARAMS if p[0] != "p Region"]
+    if dash == "Target vs Achievement":
+        return BASE_PARAMS + [("p View", "compact")]
+    if dash == "Explore":
+        return BASE_PARAMS + [("p Dim", "compact")]
+    return BASE_PARAMS
+
 
 NOTES = {
-    "Home": "Use the buttons above to move between pages. Filters on the left apply to every page.",
+    "Home": "Headline numbers. Use the buttons to move between pages; the filters on the left apply to every page.",
+    "MTD": "Month to date (1st of this month to today) vs the same days last year, and this month's target.",
     "Executive": "Are we on track? Sales vs last year and vs target, by region and branch.",
-    "Branches": "Branch and ASM scorecards. Achievement uses monthly branch targets (net; gross = net / 0.83).",
-    "Products": "Family, activity and SKU performance, and the focus families Wiser and Miluz Zeta.",
+    "Branches": "Branch and ASM scorecards.",
+    "Products": "Family, activity, classification and SKU performance; focus families Wiser and Miluz Zeta.",
     "Partners": "Partner base, slabs, new / revival partners and the partners to watch.",
-    "Partner Targets": "QTOD / ATOD partner targets vs achievement (targets are gross; net = gross x 0.83).",
-    "Order Book": "Order intake (OB) against last year, conversion to sales and the open backlog.",
+    "Target vs Achievement": "Monthly branch targets (net), yearly branch targets (net) and partner targets (gross).",
+    "SSP": "Sales through SSPs vs SSP targets, and with vs without SSP.",
+    "Pavilion": "Pavilion slabs and qualification, as published in Pavilion_Unpivoted.xlsx.",
+    "Order Book": "Order intake (OB) vs last year, conversion to sales and the open backlog.",
     "Explore": "Pick any dimension in 'Explore by' to slice sales, OB, backlog and partners.",
 }
+for r in REGIONS:
+    NOTES[f"Region - {r}"] = f"{r} region - branches, families, ASMs and top partners."
+
+SIDE_NOTE = ("Gross / Net: monthly and yearly targets are net (gross = net / 0.83); partner targets are gross (net = gross x 0.83).\n"
+             "Growth compares the same dates last year.\n"
+             "Monthly target basis: 'Full months' counts each month's full target; 'Pro-rated to date' counts the current month only up to today.")
+
+K4 = lambda names, y=112: [(n, 230 + i * 290, y, 280, 110) for i, n in enumerate(names)]
 
 LAYOUT = {
-    # page: (height, [(sheet, x, y, w, h)])  -- content area starts at x=230, width 1150
-    "Home": (980, [
-        ("K | Sales", 230, 112, 280, 120), ("K | Achievement", 520, 112, 280, 120), ("K | Annual target", 810, 112, 280, 120), ("K | Run-rate", 1100, 112, 280, 120),
-        ("K | Order book", 230, 242, 280, 120), ("K | Backlog", 520, 242, 280, 120), ("K | Partners", 810, 242, 280, 120), ("K | Data", 1100, 242, 280, 120),
-        ("E | Region table", 230, 372, 1150, 230),
-        ("E | Monthly trend", 230, 612, 1150, 350)]),
-    "Executive": (1560, [
-        ("K | Sales", 230, 112, 280, 120), ("K | Achievement", 520, 112, 280, 120), ("K | Annual target", 810, 112, 280, 120), ("K | Run-rate", 1100, 112, 280, 120),
-        ("K | Order book", 230, 242, 280, 120), ("K | Backlog", 520, 242, 280, 120), ("K | Partners", 810, 242, 280, 120), ("K | Data", 1100, 242, 280, 120),
-        ("E | Monthly trend", 230, 372, 570, 330), ("E | Sales vs target", 810, 372, 570, 330),
-        ("E | Region table", 230, 712, 1150, 230),
-        ("E | Branch achievement", 230, 952, 570, 590), ("E | Branch growth", 810, 952, 570, 590)]),
-    "Branches": (1980, [
-        ("K | Sales", 230, 112, 280, 120), ("K | Achievement", 520, 112, 280, 120), ("K | Annual target", 810, 112, 280, 120), ("K | Run-rate", 1100, 112, 280, 120),
-        ("B | Branch table", 230, 242, 1150, 640),
-        ("B | Focus families", 230, 892, 1150, 520),
-        ("B | ASM table", 230, 1422, 1150, 540)]),
-    "Products": (1900, [
-        ("K | Sales", 230, 112, 370, 120), ("K | Per partner", 620, 112, 370, 120), ("K | Data", 1010, 112, 370, 120),
-        ("P | Family bars", 230, 242, 570, 620), ("P | Family table", 810, 242, 570, 620),
-        ("P | Activity", 230, 872, 570, 240), ("P | Classification", 810, 872, 570, 460),
-        ("P | Focus by region", 230, 1122, 570, 210),
-        ("P | Top SKUs", 230, 1342, 1150, 540)]),
-    "Partners": (1670, [
-        ("K | Partners", 230, 112, 370, 120), ("K | Per partner", 620, 112, 370, 120), ("K | Sales", 1010, 112, 370, 120),
-        ("Pa | Slabs", 230, 242, 370, 260), ("Pa | Tier", 620, 242, 370, 260), ("Pa | Partner type", 1010, 242, 370, 260),
-        ("Pa | New partners", 230, 512, 1150, 260),
-        ("Pa | Top partners", 230, 782, 570, 600), ("Pa | At-risk partners", 810, 782, 570, 600),
-        ("Pa | SSA", 230, 1392, 1150, 260)]),
-    "Partner Targets": (1700, [
-        ("K | Partner target", 230, 112, 570, 120), ("K | Data", 810, 112, 570, 120),
-        ("T | Annual", 230, 242, 1150, 720),
-        ("T | Quarterly", 230, 972, 1150, 710)]),
-    "Order Book": (1500, [
-        ("K | Order book", 230, 112, 280, 120), ("K | Sales to OB", 520, 112, 280, 120), ("K | Backlog", 810, 112, 280, 120), ("K | Data", 1100, 112, 280, 120),
-        ("O | OB trend", 230, 242, 760, 320), ("O | Backlog ageing", 1000, 242, 380, 320),
-        ("O | OB by branch", 230, 572, 1150, 560),
-        ("O | Backlog partners", 230, 1142, 1150, 340)]),
-    "Explore": (1300, [
-        ("X | Explore table", 230, 112, 640, 1170), ("X | Explore bars", 880, 112, 500, 1170)]),
+    "Home": (1000, K4(["K | Sales", "K | Achievement", "K | Yearly target", "K | Run-rate"])
+             + K4(["K | Order book", "K | Backlog", "K | Partners", "K | Data"], 232)
+             + [("E | Region table", 230, 352, 1150, 250), ("E | Monthly trend", 230, 612, 1150, 370)]),
+    "MTD": (1640, K4(["M | Sales", "M | Achievement", "M | OB", "M | Yesterday"])
+            + [("M | Daily trend", 230, 232, 1150, 300), ("M | Branch table", 230, 542, 1150, 520),
+               ("M | Family", 230, 1072, 400, 550), ("M | ASM table", 640, 1072, 740, 550)]),
+    "Executive": (1520, K4(["K | Sales", "K | Achievement", "K | Yearly target", "K | Run-rate"])
+                  + K4(["K | Order book", "K | Backlog", "K | Partners", "K | Data"], 232)
+                  + [("E | Monthly trend", 230, 352, 570, 320), ("E | Sales vs target", 810, 352, 570, 320),
+                     ("E | Region table", 230, 682, 1150, 250),
+                     ("E | Branch achievement", 230, 942, 570, 560), ("E | Branch growth", 810, 942, 570, 560)]),
+    "Branches": (1780, K4(["K | Sales", "K | Achievement", "K | Yearly target", "K | Data"])
+                 + [("B | Branch table", 230, 232, 1150, 560), ("B | Focus families", 230, 802, 1150, 480),
+                    ("B | ASM table", 230, 1292, 1150, 470)]),
+    "Products": (1820, K4(["K | Sales", "K | Wiser", "K | Zeta", "K | Data"])
+                 + [("P | Family bars", 230, 232, 560, 420), ("P | Family table", 800, 232, 580, 420),
+                    ("P | Activity", 230, 662, 560, 230), ("P | Focus by region", 800, 662, 580, 230),
+                    ("P | Classification", 230, 902, 1150, 380),
+                    ("P | Top SKUs", 230, 1292, 1150, 510)]),
+    "Partners": (1700, K4(["K | Partners", "K | New partners", "K | Per partner", "K | Data"])
+                 + [("Pa | Slabs", 230, 232, 370, 250), ("Pa | Tier", 620, 232, 370, 250), ("Pa | Partner type", 1010, 232, 370, 250),
+                    ("Pa | New partners", 230, 492, 760, 250), ("Pa | Onboarded", 1000, 492, 380, 250),
+                    ("Pa | Top partners", 230, 752, 1150, 460), ("Pa | At-risk partners", 230, 1222, 1150, 460)]),
+    "Target vs Achievement": (2000, K4(["K | Achievement", "K | Yearly target", "K | Partner target", "K | Run-rate"])
+                              + [("T | Branch", 230, 232, 1150, 560), ("T | Month heat", 230, 802, 1150, 500),
+                                 ("T | Partner branches", 230, 1312, 400, 670), ("T | Partners", 640, 1312, 740, 670)]),
+    "SSP": (1500, K4(["K | SSP sales", "K | SSP target", "K | Sales", "K | Data"])
+            + [("S | SSP table", 230, 232, 1150, 300), ("S | With vs without", 230, 542, 560, 160), ("S | Trend", 800, 542, 580, 300),
+               ("S | Partners", 230, 852, 1150, 630)]),
+    "Pavilion": (1680, [("PV | Type", 230, 112, 560, 170), ("PV | Classification", 800, 112, 580, 170),
+                        ("PV | Min slab", 230, 292, 560, 260), ("PV | Total target", 800, 292, 580, 260),
+                        ("PV | App T&C", 230, 562, 560, 260), ("PV | Sales slabs", 230, 832, 1150, 420),
+                        ("PV | Wiser slabs", 230, 1262, 1150, 400)]),
+    "Order Book": (1520, K4(["K | Order book", "K | Sales to OB", "K | Backlog", "K | Data"])
+                   + [("O | OB trend", 230, 232, 760, 320), ("O | Backlog ageing", 1000, 232, 380, 320),
+                      ("O | OB by branch", 230, 562, 1150, 560), ("O | Backlog partners", 230, 1132, 1150, 370)]),
+    "Explore": (1500, [("X | Explore table", 230, 112, 1150, 700), ("X | Explore bars", 230, 822, 1150, 660)]),
 }
+for r in REGIONS:
+    p = f"{r} | "
+    LAYOUT[f"Region - {r}"] = (1640, [(p + n, 230 + i * 230, 152, 220, 110) for i, n in
+                                      enumerate(["Sales", "Achievement", "Yearly target", "Run-rate", "Order book"])]
+                               + [(p + "Trend", 230, 272, 1150, 300), (p + "Branches", 230, 582, 1150, 300),
+                                  (p + "Families", 230, 892, 560, 360), (p + "Focus", 800, 892, 580, 360),
+                                  (p + "ASM", 230, 1262, 560, 360), (p + "Top partners", 800, 1262, 580, 360)])

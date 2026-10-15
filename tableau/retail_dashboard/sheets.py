@@ -1,9 +1,23 @@
 """Worksheet XML builders in the style of the eCommerce workbook."""
-from core import (DS, DS_CAPTION, C_BAND, C_DARK, C_HEAD_BG, C_MID, C_MUTED, C_TEXT,
+import re
+
+from core import (DS, DS_CAPTIONS, C_BAND, C_DARK, C_HEAD_BG, C_MID, C_MUTED, C_TEXT,
                   attr, inst, inst_xml, iref, new_uuid, txt)
 
 MN = f"[{DS}].[:Measure Names]"
 MV = f"[{DS}].[Multiple Values]"
+
+
+def mn(ds):
+    return f"[{ds}].[:Measure Names]"
+
+
+def mv(ds):
+    return f"[{ds}].[Multiple Values]"
+
+# stepped colour scales (worksheet level, as in the Retail workbook)
+ACH_SCALE = (0.5, 1.5, 4, ["#c0392b", "#e8a33d", "#7fbf7b", "#1f7a4d"])      # <75% | 75-100% | 100-125% | >125%
+GROWTH_SCALE = (-0.5, 0.5, 2, ["#c0392b", "#1f7a4d"])                         # declining | growing
 
 
 def run(text, color=C_TEXT, size=9, bold=False):
@@ -55,26 +69,22 @@ class Sheet:
 
     def __init__(self, R, name, title, kind="chart"):
         self.R, self.name, self.title, self.kind = R, name, title, kind
-        self.uses = []          # (Field, kind)
-        self.extra_fields = []  # fields needed only in dependencies
-        self.filters = []       # xml strings
-        self.slices = []        # instance refs
-        self.sorts = []         # xml strings
+        self.uses, self.extra_fields = [], []
+        self.filters, self.slices, self.sorts = [], [], []
         self.manual_sort = ""
-        self.rows = ""
-        self.cols = ""
+        self.rows = self.cols = ""
         self.rows_total = False
         self.mark = "Text"
-        self.encodings = []     # (type, ref)
-        self.label = None       # customized label runs xml
+        self.encodings = []
+        self.label = None
         self.mark_color = None
         self.show_labels = True
-        self.pane_style = ""
         self.cell_align = None
-        self.extra_style = ""
         self.bg = "#ffffff"
-        self.widths = []        # (instance ref, width)
-        self.measure_names = None
+        self.widths = []
+        self.hide_axis = []         # (field ref, scope)
+        self.scales = []            # (field ref, scale)
+        self.fit = "entire-view"    # dashboard zoom: entire-view | fit-width
         self.nav_target = None
 
     # -- helpers ---------------------------------------------------------
@@ -84,13 +94,14 @@ class Sheet:
             self.uses.append((f, kind))
         return iref(f, kind)
 
-    def base(self, name, kind="dim"):
-        return self.use(self.R.fields[name], kind)
-
-    def measures(self, captions):
-        """Put several aggregate calcs on Measure Names / Measure Values."""
-        refs = [self.use(c, "usr") for c in captions]
-        self.measure_names = refs
+    def measures(self, items):
+        """items: captions of aggregate calcs, or (field, kind) pairs."""
+        refs = []
+        for it in items:
+            refs.append(self.use(*it) if isinstance(it, tuple) else self.use(it, "usr"))
+        first = items[0]
+        f0 = first[0] if isinstance(first, tuple) else self.R[first]
+        MN, self.mn, self.mv = mn(f0.ds), mn(f0.ds), mv(f0.ds)
         members = "".join(f"<groupfilter function='member' level='[:Measure Names]' member={attr(chr(34) + r + chr(34))} />" for r in refs)
         self.filters.insert(0, f"<filter class='categorical' column='{MN}'><groupfilter function='union' user:op='manual'>{members}</groupfilter></filter>")
         self.manual_sort = (f"<manual-sort column='{MN}' direction='ASC'><dictionary>"
@@ -99,8 +110,8 @@ class Sheet:
         self.slices.append(MN)
         return refs
 
-    def bool_filter(self, caption, context=False):
-        f = self.R[caption]
+    def bool_filter(self, field, context=False):
+        f = self.R[field] if isinstance(field, str) else field
         ref = self.use(f, "dim")
         lvl = "[" + inst(f, "dim")[0] + "]"
         ctx = " context='true'" if context else ""
@@ -108,13 +119,30 @@ class Sheet:
                             f"user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' /></filter>")
         self.slices.insert(0, ref)
 
+    def member_filter(self, field, values, context=True):
+        f = self.R[field] if isinstance(field, str) else field
+        ref = self.use(f, "dim")
+        lvl = "[" + inst(f, "dim")[0] + "]"
+        ctx = " context='true'" if context else ""
+        values = [values] if isinstance(values, str) else values
+        mem = lambda v: (f"<groupfilter function='member' level='{lvl}' member={attr(chr(34) + v + chr(34))} "
+                         f"user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate' />")
+        if len(values) == 1:
+            inner = mem(values[0])
+        else:
+            inner = ("<groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>"
+                     + "".join(f"<groupfilter function='member' level='{lvl}' member={attr(chr(34) + v + chr(34))} />" for v in values)
+                     + "</groupfilter>")
+        self.filters.append(f"<filter class='categorical' column='{ref}'{ctx}>{inner}</filter>")
+        self.slices.insert(0, ref)
+
     def nonnull(self, caption):
         ref = self.use(caption, "usr")
         self.filters.append(f"<filter class='quantitative' column='{ref}' included-values='non-null' />")
         self.slices.append(ref)
 
-    def exclude_null(self, ref, field, kind="dim"):
-        lvl = "[" + inst(field, kind)[0] + "]"
+    def exclude_null(self, ref, field):
+        lvl = "[" + inst(field, "dim")[0] + "]"
         self.filters.append(f"<filter class='categorical' column='{ref}'><groupfilter function='except' user:ui-domain='database' user:ui-enumeration='exclusive' user:ui-marker='enumerate'>"
                             f"<groupfilter function='level-members' level='{lvl}' /><groupfilter function='member' level='{lvl}' member='%null%' /></groupfilter></filter>")
         self.slices.append(ref)
@@ -137,40 +165,51 @@ class Sheet:
     # -- XML -------------------------------------------------------------
     def xml(self):
         R = self.R
-        names = {f.name for f, _ in self.uses} | {f.name for f in self.extra_fields}
-        closure, params = R.closure(names)
-        cols = sorted((R.fields[n] for n in closure), key=lambda f: f.name)
-        pdeps = ""
-        title = self.title
-        if "<[Parameters]." in title:
-            import re
-            params |= set(re.findall(r"<\[Parameters\]\.\[([^\]]+)\]>", title))
-        if self.label and "<[Parameters]." in self.label:
-            import re
-            params |= set(re.findall(r"<\[Parameters\]\.\[([^\]]+)\]>", self.label))
+        keys = {f.key for f, _ in self.uses} | {f.key for f in self.extra_fields}
+        closure, params = R.closure(keys)
+        for t in (self.title or "", self.label or ""):
+            params |= set(re.findall(r"<\[Parameters\]\.\[([^\]]+)\]>", t))
+        by_ds = {}
+        for k in closure:
+            f = R.fields[k]
+            by_ds.setdefault(f.ds, []).append(f)
+        dss = "".join(f"<datasource caption={attr(DS_CAPTIONS[d])} name='{d}' />" for d in sorted(by_ds))
         if params:
-            pdeps = ("<datasource-dependencies datasource='Parameters'>"
+            dss += "<datasource name='Parameters' />"
+        deps = ""
+        if params:
+            deps += ("<datasource-dependencies datasource='Parameters'>"
                      + "".join(R.params[p].column_xml(with_members=False) for p in sorted(params))
                      + "</datasource-dependencies>")
-        dsdeps = (f"<datasource-dependencies datasource='{DS}'>"
-                  + "".join(f.column_xml() for f in cols)
-                  + "".join(inst_xml(f, k) for f, k in self.uses)
-                  + "</datasource-dependencies>")
-        dss = f"<datasource caption={attr(DS_CAPTION)} name='{DS}' />" + ("<datasource name='Parameters' />" if params else "")
+        for d in sorted(by_ds):
+            cols = sorted(by_ds[d], key=lambda f: f.name)
+            deps += (f"<datasource-dependencies datasource='{d}'>"
+                     + "".join(f.column_xml() for f in cols)
+                     + "".join(inst_xml(f, k) for f, k in self.uses if f.ds == d)
+                     + "</datasource-dependencies>")
         sorts = ("<shelf-sorts>" + "".join(self.sorts) + "</shelf-sorts>") if self.sorts else ""
         slices = ("<slices>" + "".join(f"<column>{s}</column>" for s in self.slices) + "</slices>") if self.slices else ""
-        view = (f"<view><datasources>{dss}</datasources>{pdeps}{dsdeps}"
+        view = (f"<view><datasources>{dss}</datasources>{deps}"
                 + "".join(self.filters) + self.manual_sort + sorts + slices + "<aggregation value='true' /></view>")
 
         bg = self.bg
+        style = ""
+        for ref, scope in self.hide_axis:
+            style += f"<style-rule element='axis'><format attr='display' class='0' field='{ref}' scope='{scope}' value='false' /></style-rule>"
         if self.kind == "table":
-            style = STYLE_BASE.format(bg=bg, rowlabels="true") + TABLE_STYLE
+            style += STYLE_BASE.format(bg=bg, rowlabels="true") + TABLE_STYLE
         else:
-            style = STYLE_BASE.format(bg=bg, rowlabels="false") + NO_LINES
+            style += STYLE_BASE.format(bg=bg, rowlabels="false") + NO_LINES
             style += f"<style-rule element='pane'><format attr='background-color' value='{bg}' /></style-rule>"
-        style += self.extra_style
+        if self.scales:
+            enc = ""
+            for ref, (lo, hi, steps, colors) in self.scales:
+                enc += (f"<encoding attr='color' field='{ref}' max='{hi}' min='{lo}' num-steps='{steps}' type='custom-interpolated'>"
+                        "<color-palette custom='true' name='' type='ordered-diverging'>"
+                        + "".join(f"<color>{c}</color>" for c in colors) + "</color-palette></encoding>")
+            style += f"<style-rule element='mark'>{enc}</style-rule>"
         for ref, w in self.widths:
-            rule = "cell" if ref == MN else "header"
+            rule = "cell" if ref.endswith("[:Measure Names]") else "header"
             fmt = f"<format attr='width' field='{ref}' value='{w}' />"
             style = style.replace(f"<style-rule element='{rule}'>", f"<style-rule element='{rule}'>{fmt}", 1)
         style = f"<style>{style}</style>"
@@ -189,7 +228,7 @@ class Sheet:
         if self.cell_align:
             cell = f"<style-rule element='cell'><format attr='text-align' value='{self.cell_align}' /><format attr='vertical-align' value='center' /></style-rule>"
         pane = (f"<pane selection-relaxation-option='selection-relaxation-allow'><view><breakdown value='auto' /></view>"
-                f"<mark class='{self.mark}' />{enc}{label}<style>{cell}<style-rule element='mark'>{mstyle}</style-rule>{self.pane_style}</style></pane>")
+                f"<mark class='{self.mark}' />{enc}{label}<style>{cell}<style-rule element='mark'>{mstyle}</style-rule></style></pane>")
         rows = f"<rows total='true'>{self.rows}</rows>" if (self.rows and self.rows_total) else (f"<rows>{self.rows}</rows>" if self.rows else "<rows />")
         cols = f"<cols>{self.cols}</cols>" if self.cols else "<cols />"
         return (f"<worksheet name={attr(self.name)}><layout-options><title><formatted-text>{self.title}</formatted-text></title></layout-options>"
@@ -198,41 +237,38 @@ class Sheet:
 
 
 # ====================================================================== builders
-def kpi(R, name, title, big, lines, units=True):
-    """KPI card: one big number + small context lines.
-    big: caption of aggregate calc; lines: list of (prefix text, caption or None, suffix)."""
+def is_value(R, caption):
+    return R[caption].fmt == "n#,##0.0;-#,##0.0"
+
+
+def kpi(R, name, title, big, line=None, units=None):
+    """KPI card: one big number and at most one context value (with three fields
+    on one text mark Tableau showed ####)."""
+    if units is None:
+        units = is_value(R, big)
     s = Sheet(R, name, title_runs(title, param_units=units), "kpi")
-    refs = {}
-    allcaps = [big] + [c for _, c, _ in lines if c]
-    for c in allcaps:
-        kindc = "usrn" if R[c].datatype == "string" else "usr"
-        refs[c] = s.use(c, kindc)
-        s.encodings.append(("text", refs[c]))
-    lab = run(f"<{refs[big]}>", C_TEXT, 18, True)
-    for pre, c, suf in lines:
-        lab += run("Æ\n", C_TEXT, 6)
-        if pre:
-            lab += run(pre, C_MUTED, 9)
-        if c:
-            lab += run(f"<{refs[c]}>", C_MID, 9, True)
-        if suf:
-            lab += run(suf, C_MUTED, 9)
+    kind = lambda c: "usrn" if R[c].datatype == "string" else "usr"
+    rb = s.use(big, kind(big))
+    s.encodings.append(("text", rb))
+    lab = run(f"<{rb}>", C_TEXT, 17, True)
+    if line:
+        pre, cap = line
+        rl = s.use(cap, kind(cap))
+        s.encodings.append(("text", rl))
+        lab += run("Æ\n", C_TEXT, 6) + run(pre, C_MUTED, 9) + run(f"<{rl}>", C_MID, 9, True)
     s.label = lab
     s.cell_align = "left"
     s.mark_color = C_MID
     return s
 
 
-def nav(R, page):
-    s = Sheet(R, f"Nav | {page}", "", "nav")
-    s.title = ""
-    f = R["Nav count"]
-    ref = s.use(f, "usr")
+def nav(R, page, label=None):
+    s = Sheet(R, f"Nav | {label or page}", "", "nav")
+    ref = s.use("Nav count", "usr")
     s.encodings.append(("text", ref))
-    bg = C_MID
-    s.bg = bg
-    s.label = run(page, "#ffffff", 9, True)
+    s.bg = C_MID
+    s.label = run(label or page, "#ffffff", 9, True)
     s.cell_align = "center"
-    s.mark_color = bg
+    s.mark_color = C_MID
     s.nav_target = page
     return s

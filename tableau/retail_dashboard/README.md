@@ -1,12 +1,12 @@
 # Retail Dashboard (Tableau) — built from scratch
 
-Builds `Retail Dashboard v8.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before.
+Builds `Retail Dashboard v9.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before.
 
 ```
-python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v8.twbx"
-python validate.py "Retail Dashboard v8.twb"        # references, tables, aggregation, filters, actions
-python order_check.py "Retail Dashboard v8.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
-python wire.py "Retail Dashboard v8.twb" wireframes  # optional PNG wireframes (needs matplotlib)
+python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v9.twbx"
+python validate.py "Retail Dashboard v9.twb"        # references, tables, aggregation, filters, actions
+python order_check.py "Retail Dashboard v9.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
+python wire.py "Retail Dashboard v9.twb" wireframes  # optional PNG wireframes (needs matplotlib)
 ```
 
 Needs `lxml`. The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored.
@@ -19,7 +19,9 @@ Every dashboard is built from layout containers, so rows, columns and the filter
 - filter panel on the left;
 - one horizontal container per row of sheets.
 
-Table columns are sized to fill their box; very wide tables keep 60 px columns and scroll sideways.
+Table columns are sized to fill their box; very wide tables keep 60 px columns and scroll sideways. Column headers are white on green, wrap, and are as tall as the longest header needs.
+
+Where a 'Select a view' parameter swaps sheets (Partner Targets, MTD), each sheet's visibility is controlled by the parameter (Control visibility using value), so only the selected sheet and its title are shown.
 
 ## Filters (left panel, every page)
 
@@ -39,7 +41,7 @@ Table columns are sized to fill their box; very wide tables keep 60 px columns a
 | Partners | Achievement bands, slabs, tiers, new / revival by month, onboarded year, top 10, declining partners |
 | All partners | Every partner with growth, FY target and Ach %; partner x month |
 | Policy Tracker | Policy categories (Old, Handholding, New), last-year sales buckets, partner-wise assigned target, Ach % and required run-rate |
-| New Geo | New partners by region vs target, by tier, type and activity; segments; new geo cities |
+| New Partner - New Geo | New partners as the policy tracker groups them (New Partner group: new this year, Q4 last year onboarded, under 5 L last year onboarded), on this page only: by policy category with the flat 25 L assigned target, by region vs the count and value targets, region x category, tier, type, activity; new geo cities |
 | Monthly Targets | Monthly Targets sheet: by month, chart, branch x month, Wiser / Zeta |
 | Yearly Targets | Branch Targets sheet: by region and branch, achievement bars |
 | Partner Targets | QTOD / ATOD partner-wise target vs achievement, as the old Target vs Ach dashboard: 'Select a View' picks Annual, QTOD Q1 / Q2 / Q3 / Q4 (quarter target, sales, Ach %, balance, each month's sales and Ach %), Wiser or Zeta |

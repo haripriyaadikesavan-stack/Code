@@ -18,7 +18,7 @@ CHAPTERS = [
     ("Partners", "Partners", "Partner base: achievement bands, slabs, tiers, new / revival partners and partners to watch."),
     ("All partners", "All Partners", "Numbers for every partner, and every partner month by month."),
     ("Policy", "Policy Tracker", "Partner policy categories (Old, Handholding, New), assigned targets and achievement."),
-    ("New Geo", "New Geo", "New partners and new cities: targets, regions, tiers, products."),
+    ("New Ptnr/Geo", "New Partner - New Geo", "New partners as the policy tracker groups them (new this year, Q4 and under 5 L last year), and new cities."),
     ("Monthly", "Monthly Targets", "Monthly targets (Monthly Targets sheet) vs sales and achievement."),
     ("Yearly", "Yearly Targets", "Yearly branch targets (Branch Targets sheet) vs sales, balance and run-rate."),
     ("Partner tgt", "Partner Targets", "QTOD / ATOD partner target vs achievement: annual, each quarter, Wiser and Zeta (pick in 'Select a View')."),
@@ -275,6 +275,9 @@ def build_sheets(R):
     add(kpi(R, "K | New partners", "New / revival partners", "New partners", ("Their sales  ", "New partner sales CY"), units=False))
     add(kpi(R, "K | Lapsed", "Lapsed partners", "Lapsed partners", ("Active last year  ", "Active partners PY"), units=False))
     add(kpi(R, "K | New share", "New partners' share of sales", "New partner sales %", ("Growth  ", "New partner growth %"), units=False))
+    add(kpi(R, "K | NP partners", "New partners (policy)", "Policy new partners", ("Buying this period  ", "Policy new buying"), units=False))
+    add(kpi(R, "K | NP sales", "New partners' sales", "Policy new sales", ("Share of sales  ", "Policy new share %")))
+    add(kpi(R, "K | NP target", "New partner sales target achieved", "Policy new target Ach %", ("Target  ", "New partner sales target")))
     add(kpi(R, "K | New geo", "New geo cities", "New geo cities", ("Their sales  ", "New geo sales"), units=False))
     add(kpi(R, "K | Monthly target", "Monthly target achieved", "Monthly Ach %", ("Monthly target  ", "Monthly target")))
     add(kpi(R, "K | Monthly gap", "Gap to monthly target", "Gap to monthly target", ("Sales  ", "Sales")))
@@ -392,26 +395,29 @@ def build_sheets(R):
               widths=[250, 45, 55, 75, 130, 60, 140], col_width=80, total=False, sort_by="Sales", sort_dims=[0],
               nonnull="Has sales (agg)", fit=None), "P", "P")
 
-    # ---- New Geo
-    NP = ["New partner count target", "New partners", "New partners PY", "New partner sales target", "New partner sales CY",
-          "New partner sales PY", "New partner growth %", "New partner sales Ach %", "Avg sales per new partner"]
-    add(table(R, "NG | Regions", "New partner performance by region - target vs actual", ["Region"], NP,
-              sub="New = bought this year, nothing in the previous two years; targets from the notebook config (gross)",
-              widths=[80], nonnull="Has sales (agg)"))
-    add(table(R, "NG | Tier", "New partners by tier", ["Tier Category"],
-              ["New partners", "New partners PY", "New partner sales CY", "New partner sales PY", "New partner growth %"],
-              widths=[90], nonnull="New partner sales CY", col_width=84, fit=None))
-    add(table(R, "NG | Type", "New partners by type", ["RD/KRO"],
-              ["New partners", "New partners PY", "New partner sales CY", "New partner sales PY", "New partner growth %"],
-              widths=[60], nonnull="New partner sales CY", col_width=84, fit=None))
-    add(matrix(R, "NG | Products", "New partners' sales by activity and region", ["Region"], "Helios Code", "New partner sales CY",
-               nonnull="New partner sales CY", widths=[80]))
-    s = add(table(R, "NG | Cities", "New geo cities - first sales this year (none in the previous two years)",
-                  ["Region", "Branch", "City (Geography mapping)"], ["New geo partners", "New geo sales"],
-                  widths=[70, 90, 160], nonnull="New geo sales", sort_by="New geo sales", sort_dims=[2]))
-    add(table(R, "NG | Segments", "Partner segments - new / revival vs existing", ["Partner status"],
-              ["Active partners", "Sales PY", "Sales", "Growth %", "Share of sales %", "Sales per partner"], widths=[110],
-              nonnull="Has sales (agg)", col_width=84, fit=None))
+    # ---- New Partner - New Geo: new partners as the policy tracker groups them (this page only)
+    NPSUB = "New partners = policy tracker's New Partner group: new this year, onboarded in Q4 last year, or under 5 L last year"
+    s = add(table(R, "NG | Categories", "New partners by policy category",
+                  ["Policy category"], ["Policy new partners", "Policy new buying", "Policy new sales PY", "Policy new sales",
+                                        "Policy new growth %", "Policy new assigned target", "Policy new Ach %", "Policy new share %",
+                                        "Policy new sales per partner"],
+                  sub=NPSUB + "; assigned target flat 25 L (gross) each", widths=[170], nonnull="Policy new partners"))
+    s.member_filter("Policy group", "New Partner", context=False)
+    add(table(R, "NG | Regions", "New partners by region - target vs actual", ["Region"],
+              ["New partner count target", "Policy new buying", "Policy new count Ach %", "New partner sales target", "Policy new sales",
+               "Policy new target Ach %", "Policy new sales PY", "Policy new growth %", "Policy new sales per partner"],
+              sub="Region targets from the notebook config (count and gross value)", widths=[80], nonnull="Has sales (agg)"))
+    s = add(matrix(R, "NG | Region x category", "New partners' sales by region and policy category", ["Region"], "Policy category",
+                   "Policy new sales", nonnull="Policy new sales", widths=[80]))
+    s.member_filter("Policy group", "New Partner", context=False)
+    NT5 = ["Policy new partners", "Policy new buying", "Policy new sales PY", "Policy new sales", "Policy new growth %"]
+    add(table(R, "NG | Tier", "New partners by tier", ["Tier Category"], NT5, widths=[90], nonnull="Policy new sales"))
+    add(table(R, "NG | Type", "New partners by type", ["RD/KRO"], NT5, widths=[70], nonnull="Policy new sales"))
+    add(matrix(R, "NG | Products", "New partners' sales by activity and region", ["Region"], "Helios Code", "Policy new sales",
+               nonnull="Policy new sales", widths=[80]))
+    add(table(R, "NG | Cities", "New geo cities - first sales this year (none in the previous two years)",
+              ["Region", "Branch", "City (Geography mapping)"], ["New geo partners", "New geo sales"],
+              widths=[70, 90, 160], nonnull="New geo sales", sort_by="New geo sales", sort_dims=[2]))
 
     # ---- Monthly targets
     add(table(R, "MT | Monthly", "Monthly target vs sales and achievement", ["Month"],
@@ -434,7 +440,7 @@ def build_sheets(R):
 
     # ---- Partner targets (QTOD / ATOD)
     PD = ["Sold-to Party (Partner Master Data)", "Patner (Partner Master Data)", "ASM", "City (Geography mapping)", "RD/KRO"]
-    PW = [80, 230, 140, 100, 45]
+    PW = [80, 210, 130, 100, 80]
     TV = {
         "Annual": ("Partner wise Annual Target vs Ach%",
                    ["Annual target (100%)", "Annual target (108%)", "Sales", "Annual Ach %", "Q1 sales", "Q2 sales", "Q3 sales",
@@ -640,6 +646,8 @@ SIDE_NOTE = ("Filters apply to every sheet of every page. Growth compares the sa
 
 # rows of the content area: (height px, [cells]); cell = (sheet, width weight) | ("stack", weight, [(sheet, height)])
 #                                                    | ("swap", weight, [sheets])  (one visible at a time)
+# sheets swapped by a view parameter: the boolean field that shows each one
+VISIBILITY = {**{f"PTV | {k}": f"Target view: {k}" for k, _ in TARGET_VIEWS}, **{f"MV | {k}": f"MTD view: {k}" for k, _ in MTD_VIEWS}}
 H = lambda dash: (86, [(f"H | {dash}", 1)])
 K = lambda *names: (128, [(n, 1) for n in names])
 
@@ -660,9 +668,10 @@ LAYOUT = {
                  (300, [("Pa | Top partners", 1)]), (440, [("Pa | Declining", 1)])],
     "All Partners": [H("All Partners"), (1200, [("AP | All partners", 1)]), (800, [("AP | By month", 1)])],
     "Policy Tracker": [(300, [("PO | Summary", 3), ("PO | Buckets", 2)]), (1100, [("PO | Partners", 1)])],
-    "New Geo": [K("K | New partners", "K | New share", "K | New geo", "K | Data"), (270, [("NG | Regions", 1)]),
-                (200, [("NG | Tier", 1), ("NG | Type", 1)]), (180, [("NG | Segments", 1)]),
-                (260, [("NG | Products", 1)]), (520, [("NG | Cities", 1)])],
+    "New Partner - New Geo": [K("K | NP partners", "K | NP sales", "K | NP target", "K | New geo"),
+                              (230, [("NG | Categories", 1)]), (270, [("NG | Regions", 1)]),
+                              (270, [("NG | Region x category", 1), ("NG | Tier", 1)]), (200, [("NG | Type", 1)]),
+                              (260, [("NG | Products", 1)]), (520, [("NG | Cities", 1)])],
     "Monthly Targets": [H("Monthly Targets"), K("K | Monthly target", "K | Monthly gap", "K | Sales", "K | Data"),
                         (400, [("MT | Monthly", 1), ("MT | Chart", 1)]), (800, [("MT | Branch x month", 1)]),
                         (520, [("MT | Focus", 1)])],

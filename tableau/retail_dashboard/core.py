@@ -30,6 +30,14 @@ C_MUTED = "#6b6b6b"
 C_HEAD_BG = "#e9f0ec"
 C_BAND = "#f7f9f8"
 
+# short column headers for the New Partner - New Geo measures (trailing spaces keep them unique)
+NP_ALIASES = {
+    "Policy new partners": "New partners ", "Policy new buying": "Buying this period", "Policy new sales": "Sales ",
+    "Policy new sales PY": "Sales PY ", "Policy new growth %": "Growth % ", "Policy new share %": "Share of all sales %",
+    "Policy new assigned target": "Assigned target (25 L each)", "Policy new Ach %": "Ach % vs assigned target",
+    "Policy new count Ach %": "Count Ach %", "Policy new target Ach %": "Sales Ach % ", "Policy new sales per partner": "Sales per buying partner",
+}
+
 
 def new_uuid():
     return "{" + str(uuid.uuid4()).upper() + "}"

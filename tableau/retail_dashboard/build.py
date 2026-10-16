@@ -12,11 +12,11 @@ import zipfile
 
 from lxml import etree
 
-from core import C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, DS_CAPTION, PDS, X, attr, inst_xml, new_uuid, txt
+from core import NP_ALIASES, C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, DS_CAPTION, PDS, X, attr, inst_xml, new_uuid, txt
 
 SIDE_BG = "#e9f0ec"
 from model import build_model
-from pages import DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, build_sheets, filters_for, params_for
+from pages import DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, VISIBILITY, build_sheets, filters_for, params_for
 from sheets import run
 
 W = 1500
@@ -46,7 +46,6 @@ PAV_ALIASES = {
     "2025-26 Growth %": "Growth %", "2025-26 Growth % (Sales!Classification!Summary)": "Growth % ",
     "Total no. of RO Pavilions": "RO pavilions", "Accepted": "Accepted", "Pending": "Pending",
 }
-
 
 def read_source(twbx):
     tmp = tempfile.mkdtemp()
@@ -104,7 +103,8 @@ def clean_datasource(ds, R, dsname, aliases=None):
     adds = [f for f in mine.values() if not f.is_calc and f.ref not in present and (f.caption or f.fmt)]
     calcs = [f for f in mine.values() if f.is_calc]
     if aliases:
-        al = "".join(f"<alias key={attr(chr(34) + f'[{dsname}].[sum:{k}:qk]' + chr(34))} value={attr(v)} />" for k, v in aliases.items())
+        key = lambda k: k if ":" in k else f"sum:{k}:qk"       # a column-instance name, or a field summed
+        al = "".join(f"<alias key={attr(chr(34) + f'[{dsname}].[{key(k)}]' + chr(34))} value={attr(v)} />" for k, v in aliases.items())
         ds.insert(idx, X(f"<column datatype='string' name='[:Measure Names]' role='dimension' type='nominal'><aliases>{al}</aliases></column>"))
         idx += 1
     for f in adds + calcs:
@@ -245,6 +245,7 @@ def dashboard(R, S, dash):
     # ---- content: one horizontal container per row
     cx, cw = SIDE_W, W - SIDE_W
     content = []
+    swaps = []
     y = y0
     for h, cells in rows:
         total = sum(c[1] if c[0] in ("stack", "swap") else c[1] for c in cells)
@@ -259,9 +260,13 @@ def dashboard(R, S, dash):
                     sub.append(sheet_zone(L, S, name, x, yy, w, hh))
                     yy += hh
                 kids.append(L.flow(x, y, w, h, "vert", sub))
-            elif c[0] == "swap":       # one sheet shows at a time; the others are empty and collapse
-                # same position for every sheet (as the old workbook's sheet swap); the empty ones collapse
-                sub = [sheet_zone(L, S, name, x, y, w, h, title=True) for name in c[2]]
+            elif c[0] == "swap":
+                # one sheet shows at a time: each zone's visibility is controlled by a boolean field of the
+                # view parameter (Control visibility using value), so the hidden sheets and their titles collapse
+                sub = []
+                for k, name in enumerate(c[2]):
+                    sub.append(sheet_zone(L, S, name, x, y, w, h, title=True, hidden=k > 0))
+                    swaps.append((L.n, VISIBILITY[name]))
                 kids.append(L.flow(x, y, w, h, "vert", sub))
             else:
                 kids.append(sheet_zone(L, S, c[0], x, y, w, h))
@@ -292,9 +297,10 @@ def dashboard(R, S, dash):
              f"<style-rule element='parameter-ctrl-title'><format attr='font-size' value='8' /><format attr='font-weight' value='bold' /><format attr='color' value='{C_DARK}' /></style-rule></style>")
     root = (f"<zone h='100000' id='1' type-v2='layout-basic' w='100000' x='0' y='0'>{page}"
             f"<zone-style><format attr='background-color' value='{C_BG}' /></zone-style></zone>")
+    sid = new_uuid()
     xml = (f"<dashboard name={attr(dash)}>{style}<size maxheight='{H}' maxwidth='{W}' minheight='{H}' minwidth='{W}' />"
-           f"{deps}<zones>{root}</zones><simple-id uuid='{new_uuid()}' /></dashboard>")
-    return X(xml), used
+           f"{deps}<zones>{root}</zones><simple-id uuid='{sid}' /></dashboard>")
+    return X(xml), used, [(sid, zid, field) for zid, field in swaps]
 
 
 def fit_columns(s, w):
@@ -311,11 +317,30 @@ def fit_columns(s, w):
     s.fit = None
 
 
-def sheet_zone(L, S, name, x, y, w, h, title=True):
+def sheet_zone(L, S, name, x, y, w, h, title=True, hidden=False):
     fit_columns(S[name], w)
     if name.startswith("H | "):
         return L.box(x, y, w, h, style=("#eaf4ee", 4, 6), name=name, show_title="false")
-    return L.box(x, y, w, h, style=("#ffffff", 4, 4), name=name, show_title="true" if title else "false")
+    extra = {"hidden_by_user": "true"} if hidden else {}
+    return L.box(x, y, w, h, style=("#ffffff", 4, 4), name=name, show_title="true" if title else "false", **extra)
+
+
+def datagraph_xml(R, zones):
+    """Dynamic zone visibility: each (dashboard uuid, zone id, boolean field) shows the zone while the field is true."""
+    g = lambda: str(uuid.uuid4())
+    sub = g()
+    nodes, edges, pairs = [], [], []
+    for sid, zid, field in zones:
+        fnode, znode, out, inp = g(), g(), g(), g()
+        nodes.append(f"<single-value-field-node fieldname={attr(f'[{DS}].[{R[field].name}]')} fieldname-input-guid='{g()}' "
+                     f"node-guid='{fnode}' value-output-guid='{out}' />")
+        nodes.append(f"<dashboard-zone-visibility-node dashboard-identifier='{sid}' node-guid='{znode}' "
+                     f"visibility-input-guid='{inp}' zone-id='{zid}' />")
+        pairs += [f"<pair execution-subgraph-guid='{sub}' node-guid='{n}' />" for n in (fnode, znode)]
+        edges.append(f"<edge from='{out}' to='{inp}' />")
+    return X(f"<datagraph><graph><properties><default-execution-subgraph-guid value='{sub}' /></properties>"
+             f"<node-execution-subgraphs>{''.join(pairs)}</node-execution-subgraphs><nodes>{''.join(nodes)}</nodes>"
+             f"<edges>{''.join(edges)}</edges><pin-values /></graph></datagraph>")
 
 
 def _action(caption, dash, sheet, target):
@@ -374,7 +399,7 @@ def main(src, out):
     for k in ("2025-26 Growth %", "2025-26 Growth % (Sales!Classification!Summary)"):
         R.fields[f"{PDS}|{k}"].fmt = "p0.0%"
 
-    clean_datasource(retail, R, DS)
+    clean_datasource(retail, R, DS, aliases={f"usr:{R[k].name}:qk": v for k, v in NP_ALIASES.items()})
     retail.insert(list(retail).index(retail.find("layout")) + 1, X(style_xml(R)))
     clean_datasource(pav, R, PDS, aliases=PAV_ALIASES)
     for d in list(ds_list):
@@ -384,15 +409,17 @@ def main(src, out):
     ds_list.append(pav)
 
     S = build_sheets(R)
-    for tag in ("repository-location", "actions", "worksheets", "dashboards", "windows", "thumbnails"):
+    for tag in ("repository-location", "actions", "worksheets", "dashboards", "windows", "datagraph", "thumbnails"):
         e = root.find(tag)
         if e is not None:
             root.remove(e)
     ws = etree.SubElement(root, "worksheets")
     dbs = etree.SubElement(root, "dashboards")
     dash_used = {}
+    vis = []
     for d in DASHBOARDS:
-        el, used = dashboard(R, S, d)
+        el, used, z = dashboard(R, S, d)
+        vis += z
         dbs.append(el)
         dash_used[d] = used
     missing = sorted({n for used in dash_used.values() for n in used if n not in S})
@@ -404,6 +431,8 @@ def main(src, out):
         ws.append(X(s.xml()))
     root.append(actions_xml(S, dash_used))
     root.append(windows_xml(S, dash_used))
+    if vis:
+        root.append(datagraph_xml(R, vis))
     rank = lambda e: next((i for i, t in enumerate(TOP_ORDER) if str(e.tag) == t or str(e.tag).endswith("..." + t)), 99)
     kids = sorted(list(root), key=rank)
     if any(rank(k) == 99 for k in kids):

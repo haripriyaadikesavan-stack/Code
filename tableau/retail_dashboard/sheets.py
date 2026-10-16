@@ -1,7 +1,8 @@
 """Worksheet XML builders in the style of the eCommerce workbook."""
 import re
+import textwrap
 
-from core import (DS, DS_CAPTIONS, C_BAND, C_DARK, C_HEAD_BG, C_MID, C_MUTED, C_TEXT,
+from core import (DS, DS_CAPTIONS, NP_ALIASES, C_BAND, C_DARK, C_MID, C_MUTED, C_TEXT,
                   attr, inst, inst_xml, iref, new_uuid, txt)
 
 MN = f"[{DS}].[:Measure Names]"
@@ -65,10 +66,10 @@ TABLE_STYLE = f"""
 <style-rule element='cell'><format attr='font-weight' data-class='total' scope='rows' value='bold' /><format attr='font-weight' data-class='subtotal' scope='rows' value='bold' />
 <format attr='color' data-class='total' value='{C_DARK}' /><format attr='text-align' value='right' /><format attr='vertical-align' value='center' /></style-rule>
 <style-rule element='header'><format attr='band-color' scope='rows' value='{C_BAND}' /><format attr='band-size' scope='rows' value='1' />
-<format attr='background-color' scope='cols' value='{C_HEAD_BG}' /><format attr='font-weight' scope='cols' value='bold' /><format attr='color' scope='cols' value='{C_DARK}' />
+<format attr='background-color' scope='cols' value='{C_MID}' /><format attr='font-weight' scope='cols' value='bold' /><format attr='color' scope='cols' value='#ffffff' />
 <format attr='background-color' data-class='total' value='#dfeae4' /><format attr='background-color' data-class='subtotal' value='#eef3f0' />
 <format attr='font-weight' data-class='total' scope='rows' value='bold' /><format attr='font-weight' data-class='subtotal' scope='rows' value='bold' /><format attr='color' data-class='total' value='{C_DARK}' /></style-rule>
-<style-rule element='field-labels'><format attr='font-weight' value='bold' /><format attr='color' value='{C_DARK}' /><format attr='background-color' value='{C_HEAD_BG}' /></style-rule>
+<style-rule element='field-labels'><format attr='font-weight' value='bold' /><format attr='color' value='#ffffff' /><format attr='background-color' value='{C_MID}' /></style-rule>
 <style-rule element='pane'><format attr='band-color' scope='rows' value='{C_BAND}' /><format attr='band-size' scope='rows' value='1' />
 <format attr='background-color' data-class='total' value='#dfeae4' /><format attr='background-color' data-class='subtotal' value='#eef3f0' /></style-rule>
 <style-rule element='gridline'><format attr='line-visibility' scope='rows' value='off' /><format attr='line-visibility' scope='cols' value='off' /></style-rule>
@@ -118,6 +119,7 @@ class Sheet:
         f0 = first[0] if isinstance(first, tuple) else self.R[first]
         MN, self.mn, self.mv = mn(f0.ds), mn(f0.ds), mv(f0.ds)
         self.n_measures = len(refs)
+        self.header_names = [NP_ALIASES.get(it, it) if isinstance(it, str) else (it[0].caption or it[0].name) for it in items]
         members = "".join(f"<groupfilter function='member' level='[:Measure Names]' member={attr(chr(34) + r + chr(34))} />" for r in refs)
         self.filters.insert(0, f"<filter class='categorical' column='{MN}'><groupfilter function='union' user:op='manual'>{members}</groupfilter></filter>")
         self.manual_sort = (f"<manual-sort column='{MN}' direction='ASC'><dictionary>"
@@ -190,6 +192,15 @@ class Sheet:
     def sort_by(self, dim_ref, measure_ref, shelf="rows", direction="DESC"):
         self.sorts.append(f"<shelf-sort-v2 dimension-to-sort='{dim_ref}' direction='{direction}' measure-to-sort-by='{measure_ref}' shelf='{shelf}' />")
 
+    def header_style(self):
+        """Measure column headers wrap and get the height the longest one needs at its column width (no 'Zeta an..')."""
+        if self.kind != "table" or not self.cols.endswith("[:Measure Names]") or not getattr(self, "header_names", None):
+            return ""
+        w = next((wd for ref, wd in self.widths if ref.endswith("[:Measure Names]")), 90)
+        per_line = max(5, int((w - 10) / 6.2))       # bold 9 pt, about 6 px a character
+        lines = min(4, max(len(textwrap.wrap(n.strip(), per_line, break_long_words=False)) or 1 for n in self.header_names))
+        return f"<format attr='height' field='{self.mn}' value='{12 * lines + 14}' />"
+
     # -- XML -------------------------------------------------------------
     def xml(self):
         R = self.R
@@ -236,6 +247,11 @@ class Sheet:
                         "<color-palette custom='true' name='' type='ordered-diverging'>"
                         + "".join(f"<color>{c}</color>" for c in colors) + "</color-palette></encoding>")
             style += f"<style-rule element='mark'>{enc}</style-rule>"
+        head = self.header_style()
+        if head:
+            style = style.replace("<style-rule element='header'>", "<style-rule element='header'>" + head, 1)
+            style = style.replace("<style-rule element='pane'>",
+                                  f"<style-rule element='label'><format attr='wrap' field='{self.mn}' value='on' /></style-rule><style-rule element='pane'>", 1)
         for ref, w in self.widths:
             rule = "cell" if ref.endswith("[:Measure Names]") else "header"
             fmt = f"<format attr='width' field='{ref}' value='{w}' />"

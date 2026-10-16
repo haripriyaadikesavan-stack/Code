@@ -19,7 +19,7 @@ from model import build_model
 from pages import DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, build_sheets, filters_for, params_for
 from sheets import run
 
-W = 1400
+W = 1500
 SRC_TWB = "Overall Retail Dashboard.twb"
 TOP_ORDER = ["document-format-change-manifest", "repository-location", "preferences", "style-theme", "style",
              "local-data", "datasources", "datasource-relationships", "mapsources", "shared-views", "actions",
@@ -260,8 +260,8 @@ def dashboard(R, S, dash):
                     yy += hh
                 kids.append(L.flow(x, y, w, h, "vert", sub))
             elif c[0] == "swap":       # one sheet shows at a time; the others are empty and collapse
-                k = len(c[2])
-                sub = [sheet_zone(L, S, name, x, y + j * h / k, w, h / k, title=False) for j, name in enumerate(c[2])]
+                # same position for every sheet (as the old workbook's sheet swap); the empty ones collapse
+                sub = [sheet_zone(L, S, name, x, y, w, h, title=True) for name in c[2]]
                 kids.append(L.flow(x, y, w, h, "vert", sub))
             else:
                 kids.append(sheet_zone(L, S, c[0], x, y, w, h))
@@ -297,7 +297,22 @@ def dashboard(R, S, dash):
     return X(xml), used
 
 
+def fit_columns(s, w):
+    """Tables with measures across: size the measure columns so the table fills its box (no squeezed #### columns,
+    no empty space on the right). Wide tables keep a 60 px minimum and scroll sideways."""
+    if s.kind != "table" or not s.cols or not s.cols.endswith("[:Measure Names]"):
+        return
+    dims = sum(wd for ref, wd in s.widths if not ref.endswith("[:Measure Names]"))
+    n = getattr(s, "n_measures", 0)
+    if not n:
+        return
+    col = max(60, int((w - 8 - 8 - 18 - dims) / n))
+    s.widths = [(ref, wd) for ref, wd in s.widths if not ref.endswith("[:Measure Names]")] + [(s.mn, col)]
+    s.fit = None
+
+
 def sheet_zone(L, S, name, x, y, w, h, title=True):
+    fit_columns(S[name], w)
     if name.startswith("H | "):
         return L.box(x, y, w, h, style=("#eaf4ee", 4, 6), name=name, show_title="false")
     return L.box(x, y, w, h, style=("#ffffff", 4, 4), name=name, show_title="true" if title else "false")

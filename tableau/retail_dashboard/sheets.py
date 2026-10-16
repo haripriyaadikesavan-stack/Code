@@ -117,6 +117,7 @@ class Sheet:
         first = items[0]
         f0 = first[0] if isinstance(first, tuple) else self.R[first]
         MN, self.mn, self.mv = mn(f0.ds), mn(f0.ds), mv(f0.ds)
+        self.n_measures = len(refs)
         members = "".join(f"<groupfilter function='member' level='[:Measure Names]' member={attr(chr(34) + r + chr(34))} />" for r in refs)
         self.filters.insert(0, f"<filter class='categorical' column='{MN}'><groupfilter function='union' user:op='manual'>{members}</groupfilter></filter>")
         self.manual_sort = (f"<manual-sort column='{MN}' direction='ASC'><dictionary>"
@@ -330,7 +331,7 @@ def nav(R, page, label=None):
     ref = s.use("Nav text", "usrn")
     s.encodings.append(("text", ref))
     s.bg = C_MID
-    s.label = run(label or page, "#ffffff", 9, True)
+    s.label = run(label or page, "#ffffff", 8, True)
     s.cell_align = "center"
     s.mark_color = C_MID
     s.nav_target = page

@@ -16,6 +16,10 @@ GROSS_FACTOR = 0.83
 MTD_VIEWS = [("Branch", "Branch wise Sales, OB and Ach%"), ("Activity", "Branch & Activity wise OB and Sales"),
              ("ASM", "ASM wise OB and Sales"), ("Focus", "Focus Prod Month Target vs Ach%"),
              ("Partner", "Partner wise OB and Sales"), ("Product", "Product wise Sales, OB, Backlog")]
+# the partner target vs achievement views (as the old Target vs Ach dashboard's drop-down)
+TARGET_VIEWS = [("Annual", "Annual Target vs Ach"), ("Q1", "QTOD - Q1"), ("Q2", "QTOD - Q2"), ("Q3", "QTOD - Q3"),
+                ("Q4", "QTOD - Q4"), ("Wiser", "Wiser Target vs Ach"), ("Zeta", "Zeta Target vs Ach")]
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 FMT_V, FMT_P, FMT_N = "n#,##0.0;-#,##0.0", "p0.0%", "n#,##0;-#,##0"
 
 
@@ -153,10 +157,8 @@ def build_model(branches, branch_zone, families, rls_rules):
     P("p End", "Custom end", "date", "2026-12-31", rng=("2023-01-01", "2028-12-31", None))
     P("p Measure", "Gross / Net", "string", "Gross", ["Gross", "Net"])
     P("p Units", "Units", "string", "Mn", ["INR", "Lakh", "Mn", "Cr"])
-    P("p Quarter", "Quarter", "string", "Q4", ["Q1", "Q2", "Q3", "Q4"])
+    P("p Target view", "Select a View - QTOD/ATOD", "string", TARGET_VIEWS[0][1], [v for _, v in TARGET_VIEWS])
     P("p MTD view", "Select a view", "string", MTD_VIEWS[0][1], [v for _, v in MTD_VIEWS])
-    P("p View", "Target view", "string", "Annual (100%)",
-      ["Annual (100%)", "Annual (108%)", "Q1", "Q2", "Q3", "Q4", "Wiser", "Miluz Zeta"])
     P("p Dim", "Explore by", "string", "Branch",
       ["Region", "Branch", "ASM", "Partner", "Family", "Product classification", "Activity (Helios)",
        "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter", "New product category", "Partner status"])
@@ -337,11 +339,6 @@ def build_model(branches, branch_zone, families, rls_rules):
       "WHEN 'Quarter' THEN {{Quarter}} WHEN 'New product category' THEN {{New product category}} "
       "WHEN 'Partner status' THEN {{Partner status}} END", "string")
     # TvA view: achievement matching the selected partner-target view
-    C("View sales (row)",
-      "CASE [Parameters].[p View] WHEN 'Q1' THEN {{Sales Q1 (row)}} WHEN 'Q2' THEN {{Sales Q2 (row)}} "
-      "WHEN 'Q3' THEN {{Sales Q3 (row)}} WHEN 'Q4' THEN {{Sales Q4 (row)}} "
-      "WHEN 'Wiser' THEN {{Wiser sales CY (row)}} WHEN 'Miluz Zeta' THEN {{Zeta sales CY (row)}} "
-      "ELSE {{Sales CY (row)}} END", fmt=FMT_V)
 
     # ================================================================ monthly targets (table T, net)
     C("Target month start", "DATE(DATETRUNC('month', [Month and year]))", "date")
@@ -377,16 +374,7 @@ def build_model(branches, branch_zone, families, rls_rules):
     for col, cap in (("Target 100%", "Annual target (100%)"), ("Target 108%", "Annual target (108%)"),
                      ("Zeta Target", "Zeta annual target"), ("Wiser Target", "Wiser annual target")):
         C(f"{cap} (row)", f"IF {{{{Partner target in scope}}}} THEN [{col}] * {{{{Gross to net}}}} / {{{{Units divisor}}}} END", fmt=FMT_V)
-    C("Quarter target (row)",
-      "IF {{Partner target in scope}} THEN (CASE [Parameters].[p Quarter] WHEN 'Q1' THEN [Qtr 1 Target] "
-      "WHEN 'Q2' THEN FLOAT([Qtr 2 Target]) WHEN 'Q3' THEN FLOAT([Qtr 3 Target]) ELSE FLOAT([Qtr 4 Target]) END) "
-      "* {{Gross to net}} / {{Units divisor}} END", fmt=FMT_V)
-    C("View target (row)",
-      "IF {{Partner target in scope}} THEN (CASE [Parameters].[p View] "
-      "WHEN 'Annual (108%)' THEN [Target 108%] WHEN 'Q1' THEN [Qtr 1 Target] "
-      "WHEN 'Q2' THEN FLOAT([Qtr 2 Target]) WHEN 'Q3' THEN FLOAT([Qtr 3 Target]) WHEN 'Q4' THEN FLOAT([Qtr 4 Target]) "
-      "WHEN 'Wiser' THEN [Wiser Target] WHEN 'Miluz Zeta' THEN [Zeta Target] ELSE [Target 100%] END) "
-      "* {{Gross to net}} / {{Units divisor}} END", fmt=FMT_V)
+
 
     # ================================================================ partner targets (Partner Targets sheet, gross; as the old Partner Ach%)
     C("Partner FY target (row)",
@@ -508,10 +496,6 @@ def build_model(branches, branch_zone, families, rls_rules):
     S("MTD growth text", "IF ISNULL({{MTD growth %}}) THEN 'no sales last year' ELSE (IF {{MTD growth %}} >= 0 THEN '+' ELSE '' END) + STR(ROUND({{MTD growth %}} * 100, 1)) + '% vs same days last year' END")
     S("Month text", "DATENAME('month', MIN({{MTD start}})) + ' ' + STR(YEAR(MIN({{MTD start}}))) + ', day ' + STR(DAY(TODAY()))")
     # partner targets (TvA)
-    A("Partner target", "SUM({{View target (row)}})")
-    A("Partner achieved", "SUM({{View sales (row)}})")
-    pct("Partner Ach %", "{{View sales (row)}}", "{{View target (row)}}")
-    A("Partner balance", "SUM({{View target (row)}}) - SUM({{View sales (row)}})")
     A("Has partner target", "SUM(IF {{Partner target in scope}} THEN 1 END)", "integer", FMT_N)
     # SSP
     A("SSP target", "SUM({{SSP target (row)}})")
@@ -559,14 +543,26 @@ def build_model(branches, branch_zone, families, rls_rules):
     pct("Wiser annual Ach %", "{{Wiser sales CY (row)}}", "{{Wiser annual target (row)}}")
     for q in (1, 2, 3, 4):
         A(f"Q{q} sales", f"SUM({{{{Sales Q{q} (row)}}}})")
-    A("Quarter target", "SUM({{Quarter target (row)}})")
-    QS = "(CASE [Parameters].[p Quarter] WHEN 'Q1' THEN {{Sales Q1 (row)}} WHEN 'Q2' THEN {{Sales Q2 (row)}} WHEN 'Q3' THEN {{Sales Q3 (row)}} ELSE {{Sales Q4 (row)}} END)"
-    A("Quarter sales", f"SUM({QS})")
-    A("Quarter Ach %", f"IF SUM({{{{Quarter target (row)}}}}) <> 0 THEN SUM({QS}) / SUM({{{{Quarter target (row)}}}}) END", fmt=FMT_P)
-    A("Quarter balance", f"SUM({{{{Quarter target (row)}}}}) - SUM({QS})")
-    QM = "(CASE [Parameters].[p Quarter] WHEN 'Q1' THEN 0 WHEN 'Q2' THEN 3 WHEN 'Q3' THEN 6 ELSE 9 END)"
-    for k in (1, 2, 3):
-        A(f"Month {k} of quarter", f"SUM(IF [Type] = 'Sales' AND YEAR([InvoiceDate]) = YEAR(MIN({{{{Period end}}}})) AND MONTH([InvoiceDate]) = {QM} + {k} THEN {{{{Value}}}} END)")
+    # ---- partner target vs achievement, one view per quarter (QTOD), annual, Wiser and Zeta
+    for key, label in TARGET_VIEWS:
+        C(f"Target view: {key}", f"[Parameters].[p Target view] = '{label}'", "boolean")
+    for q in (1, 2, 3, 4):
+        col = "[Qtr 1 Target]" if q == 1 else f"FLOAT([Qtr {q} Target])"
+        C(f"Q{q} target (row)", f"IF {{{{Partner target in scope}}}} THEN {col} * {{{{Gross to net}}}} / {{{{Units divisor}}}} END", fmt=FMT_V)
+        A(f"Q{q} target", f"SUM({{{{Q{q} target (row)}}}})")
+        pct(f"Q{q} Ach %", f"{{{{Sales Q{q} (row)}}}}", f"{{{{Q{q} target (row)}}}}")
+        A(f"Q{q} balance", f"SUM({{{{Q{q} target (row)}}}}) - SUM({{{{Sales Q{q} (row)}}}})")
+        for k in (1, 2, 3):
+            mo = (q - 1) * 3 + k
+            mon = MONTHS[mo - 1]
+            C(f"{mon} sales (row)", f"IF [Type] = 'Sales' AND YEAR([InvoiceDate]) = {{{{Current year}}}} AND MONTH([InvoiceDate]) = {mo} THEN {{{{Value}}}} END", fmt=FMT_V)
+            A(f"{mon} sales", f"SUM({{{{{mon} sales (row)}}}})")
+            A(f"{mon} Ach %", f"IF SUM({{{{Q{q} target (row)}}}}) <> 0 THEN SUM({{{{{mon} sales (row)}}}}) / (SUM({{{{Q{q} target (row)}}}}) / 3) END", fmt=FMT_P)
+        for fam, cap in (("Wiser", "Wiser"), ("Miluz Zeta", "Zeta")):
+            C(f"{cap} Q{q} sales (row)", f"IF [Type] = 'Sales' AND YEAR([InvoiceDate]) = {{{{Current year}}}} AND DATEPART('quarter', [InvoiceDate]) = {q} "
+              f"AND [Family Actual (Sheet1)] = '{fam}' THEN {{{{Value}}}} END", fmt=FMT_V)
+            A(f"{cap} Q{q} sales", f"SUM({{{{{cap} Q{q} sales (row)}}}})")
+
     # policy tracker (per partner)
     A("FY PY sales", "SUM({{Sales FY PY (row)}})")
     A("Assigned target", "MAX({{Policy target (row)}})")

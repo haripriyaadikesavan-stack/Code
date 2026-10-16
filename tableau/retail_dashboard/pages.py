@@ -6,7 +6,7 @@ Dashboards are built from layout containers (rows of sheets), so they can be
 rearranged in Tableau.
 """
 from core import C_DARK, C_MID, C_TARGET, PDS
-from model import MTD_VIEWS
+from model import MONTHS, MTD_VIEWS, TARGET_VIEWS
 from sheets import (ACH_SCALE, GROWTH_SCALE, Sheet, column_scale, kpi, nav, run, title_runs, is_value)
 
 # the story: (button label, dashboard name, one-line purpose)
@@ -19,9 +19,9 @@ CHAPTERS = [
     ("All partners", "All Partners", "Numbers for every partner, and every partner month by month."),
     ("Policy", "Policy Tracker", "Partner policy categories (Old, Handholding, New), assigned targets and achievement."),
     ("New Geo", "New Geo", "New partners and new cities: targets, regions, tiers, products."),
-    ("Monthly tgt", "Monthly Targets", "Monthly targets (Monthly Targets sheet) vs sales and achievement."),
-    ("Yearly tgt", "Yearly Targets", "Yearly branch targets (Branch Targets sheet) vs sales, balance and run-rate."),
-    ("Partner tgt", "Partner Targets", "QTOD / ATOD partner targets: annual, quarter balance, Wiser and Zeta."),
+    ("Monthly", "Monthly Targets", "Monthly targets (Monthly Targets sheet) vs sales and achievement."),
+    ("Yearly", "Yearly Targets", "Yearly branch targets (Branch Targets sheet) vs sales, balance and run-rate."),
+    ("Partner tgt", "Partner Targets", "QTOD / ATOD partner target vs achievement: annual, each quarter, Wiser and Zeta (pick in 'Select a View')."),
     ("SSP", "SSP", "SSP performance and with vs without SSP."),
     ("Pavilion", "Pavilion", "Pavilion partners, KRO primary purchases, slabs and qualification."),
     ("MTD", "MTD", "This month so far: target, sales, order book and the views of the original MTD dashboard."),
@@ -281,7 +281,8 @@ def build_sheets(R):
     add(kpi(R, "K | Yearly balance", "Balance to yearly target", "Balance to yearly target", ("Year gone  ", "Year gone %")))
     add(kpi(R, "K | Annual partner", "Annual target (QTOD)", "Annual target (100%)", ("Achieved  ", "Annual Ach %")))
     add(kpi(R, "K | Partner FY", "Partner target (FY sheet)", "Partner FY target", ("Achieved  ", "Partner FY Ach %")))
-    add(kpi(R, "K | Quarter", "Quarter target (QTOD)", "Quarter target", ("Achieved  ", "Quarter Ach %")))
+    add(kpi(R, "K | Wiser target", "Wiser annual target (QTOD)", "Wiser annual target", ("Achieved  ", "Wiser annual Ach %")))
+    add(kpi(R, "K | Zeta target", "Zeta annual target (QTOD)", "Zeta annual target", ("Achieved  ", "Zeta annual Ach %")))
     add(kpi(R, "K | SSP sales", "Sales through SSPs", "SSP sales", ("Growth  ", "SSP growth %")))
     add(kpi(R, "K | SSP target", "SSP target", "SSP target", ("Achieved  ", "SSP Ach %")))
     add(kpi(R, "K | Sales to OB", "Sales to OB", "Sales to OB %", ("Sales  ", "Sales")))
@@ -432,18 +433,29 @@ def build_sheets(R):
              "Red < 75%, amber 75-100%, green above 100%", scale=("Yearly Ach %", ACH_SCALE), nonnull="Yearly Ach %"))
 
     # ---- Partner targets (QTOD / ATOD)
-    add(table(R, "PT | Annual", "Annual target vs achievement - partner-wise (QTOD / ATOD)", ["Target partner branch", "Target partner"],
-              ["Annual target (100%)", "Annual target (108%)", "Sales", "Annual Ach %", "Q1 sales", "Q2 sales", "Q3 sales", "Q4 sales",
-               "Zeta annual target", "Zeta sales", "Zeta annual Ach %", "Wiser annual target", "Wiser sales", "Wiser annual Ach %"],
-              sub="Partner targets are gross; Net = gross x 0.83", nonnull="Has partner target", widths=[70, 260], col_width=72,
-              sort_by="Annual target (100%)", fit=None), "P", "Q")
-    add(table(R, "PT | Quarter", "Quarter target balance - partner-wise (QTOD)", ["Target partner branch", "Target partner"],
-              ["Quarter target", "Quarter sales", "Quarter Ach %", "Quarter balance", "Month 1 of quarter", "Month 2 of quarter",
-               "Month 3 of quarter"], sub="Quarter selected in 'Quarter' on the left", nonnull="Has partner target",
-              widths=[70, 260], col_width=80, sort_by="Quarter target", fit=None), "P", "Q")
-    add(table(R, "PT | Branches", "Partner targets by branch", ["Target partner branch"],
-              ["Annual target (100%)", "Sales", "Annual Ach %", "Quarter target", "Quarter sales", "Quarter Ach %"],
-              nonnull="Has partner target", widths=[90]), "P", "Q")
+    PD = ["Sold-to Party (Partner Master Data)", "Patner (Partner Master Data)", "ASM", "City (Geography mapping)", "RD/KRO"]
+    PW = [80, 230, 140, 100, 45]
+    TV = {
+        "Annual": ("Partner wise Annual Target vs Ach%",
+                   ["Annual target (100%)", "Annual target (108%)", "Sales", "Annual Ach %", "Q1 sales", "Q2 sales", "Q3 sales",
+                    "Q4 sales", "Sales PY", "Growth %"]),
+        "Wiser": ("Partner wise Wiser Target vs Ach%",
+                  ["Wiser annual target", "Wiser sales", "Wiser annual Ach %", "Wiser Q1 sales", "Wiser Q2 sales", "Wiser Q3 sales",
+                   "Wiser Q4 sales", "Wiser sales PY", "Wiser growth %"]),
+        "Zeta": ("Partner wise Zeta Target vs Ach%",
+                 ["Zeta annual target", "Zeta sales", "Zeta annual Ach %", "Zeta Q1 sales", "Zeta Q2 sales", "Zeta Q3 sales",
+                  "Zeta Q4 sales", "Zeta sales PY", "Zeta growth %"]),
+    }
+    for q in (1, 2, 3, 4):
+        mons = MONTHS[(q - 1) * 3:q * 3]
+        TV[f"Q{q}"] = (f"Partner wise Q{q} Target vs Ach% (QTOD)",
+                       [f"Q{q} target", f"Q{q} sales", f"Q{q} Ach %", f"Q{q} balance"]
+                       + [x for mo in mons for x in (f"{mo} sales", f"{mo} Ach %")])
+    for key, _ in TARGET_VIEWS:
+        title, ms = TV[key]
+        s = add(table(R, f"PTV | {key}", title, PD, ms, sub="Partner targets from the QTOD / ATOD file (gross; Net = gross x 0.83)",
+                      nonnull="Has partner target", widths=PW, sort_by=ms[0], sort_dims=[1]), "P", "Q")
+        s.bool_filter(f"Target view: {key}")
 
     # ---- SSP
     add(table(R, "S | SSP table", "SSP target vs achievement", ["SSP", "Branch (SSA Targets)"],
@@ -607,7 +619,7 @@ def params_for(dash):
     if dash == "MTD":
         return VALUE + [("p MTD view", "compact")]
     if dash == "Partner Targets":
-        return PERIOD + VALUE + [("p Quarter", "compact")]
+        return PERIOD + VALUE + [("p Target view", "compact")]
     if dash == "Explore":
         return PERIOD + VALUE + [("p Dim", "compact")]
     return PERIOD + VALUE
@@ -636,7 +648,7 @@ LAYOUT = {
                  K("K | Order book", "K | Backlog", "K | Partners", "K | New partners"),
                  (310, [("O | Three years", 1)]),
                  (300, [("O | Quarters", 1), ("O | Region share", 1), ("O | Partner type", 1)])],
-    "Regions": [H("Regions"), (230, [("R | Scorecard", 1)]), (300, [("R | Trend", 1)]), (230, [("R | Growth heat", 1)]),
+    "Regions": [H("Regions"), (260, [("R | Scorecard", 1)]), (300, [("R | Trend", 1)]), (250, [("R | Growth heat", 1)]),
                 (520, [("R | Branches", 1), ("R | Focus", 1)])],
     "Branches": [H("Branches"), (600, [("B | Scorecard", 1)]), (440, [("B | Focus families", 1)]), (520, [("B | ASM table", 1)])],
     "Products": [H("Products"), K("K | Sales", "K | Wiser", "K | Zeta", "K | Quantity"), (440, [("P | Family table", 1)]),
@@ -648,16 +660,16 @@ LAYOUT = {
                  (300, [("Pa | Top partners", 1)]), (440, [("Pa | Declining", 1)])],
     "All Partners": [H("All Partners"), (1200, [("AP | All partners", 1)]), (800, [("AP | By month", 1)])],
     "Policy Tracker": [(300, [("PO | Summary", 3), ("PO | Buckets", 2)]), (1100, [("PO | Partners", 1)])],
-    "New Geo": [K("K | New partners", "K | New share", "K | New geo", "K | Data"), (230, [("NG | Regions", 1)]),
-                (200, [("NG | Tier", 1), ("NG | Type", 1)]), (150, [("NG | Segments", 1)]),
-                (230, [("NG | Products", 1)]), (520, [("NG | Cities", 1)])],
+    "New Geo": [K("K | New partners", "K | New share", "K | New geo", "K | Data"), (270, [("NG | Regions", 1)]),
+                (200, [("NG | Tier", 1), ("NG | Type", 1)]), (180, [("NG | Segments", 1)]),
+                (260, [("NG | Products", 1)]), (520, [("NG | Cities", 1)])],
     "Monthly Targets": [H("Monthly Targets"), K("K | Monthly target", "K | Monthly gap", "K | Sales", "K | Data"),
                         (400, [("MT | Monthly", 1), ("MT | Chart", 1)]), (800, [("MT | Branch x month", 1)]),
                         (520, [("MT | Focus", 1)])],
-    "Yearly Targets": [K("K | Yearly target", "K | Yearly balance", "K | Run-rate", "K | Sales"), (230, [("YT | Regions", 1)]),
+    "Yearly Targets": [K("K | Yearly target", "K | Yearly balance", "K | Run-rate", "K | Sales"), (260, [("YT | Regions", 1)]),
                        (640, [("YT | Branches", 1)]), (620, [("YT | Ach bars", 1)])],
-    "Partner Targets": [K("K | Annual partner", "K | Quarter", "K | Partner FY", "K | Data"), (500, [("PT | Branches", 1)]),
-                        (800, [("PT | Annual", 1)]), (800, [("PT | Quarter", 1)])],
+    "Partner Targets": [K("K | Annual partner", "K | Wiser target", "K | Zeta target", "K | Data"),
+                        (1000, [("swap", 1, ["PTV | " + k for k, _ in TARGET_VIEWS])])],
     "SSP": [H("SSP"), K("K | SSP sales", "K | SSP target", "K | Sales", "K | Data"), (300, [("S | SSP table", 1)]),
             (300, [("stack", 1, [("S | With vs without", 300)]), ("S | Trend", 1)]), (560, [("S | Partners", 1)])],
     "Pavilion": [H("Pavilion"), (128, [("K | Total pavilions", 1), ("K | Pavilion slab", 2), ("K | KRO pavilions", 1), ("K | KRO purchases", 1)]),

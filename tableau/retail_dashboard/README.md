@@ -1,12 +1,12 @@
 # Retail Dashboard (Tableau) — built from scratch
 
-Builds `Retail Dashboard v7.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before.
+Builds `Retail Dashboard v8.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before.
 
 ```
-python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v7.twbx"
-python validate.py "Retail Dashboard v7.twb"        # references, tables, aggregation, filters, actions
-python order_check.py "Retail Dashboard v7.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
-python wire.py "Retail Dashboard v7.twb" wireframes  # optional PNG wireframes (needs matplotlib)
+python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v8.twbx"
+python validate.py "Retail Dashboard v8.twb"        # references, tables, aggregation, filters, actions
+python order_check.py "Retail Dashboard v8.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
+python wire.py "Retail Dashboard v8.twb" wireframes  # optional PNG wireframes (needs matplotlib)
 ```
 
 Needs `lxml`. The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored.
@@ -18,6 +18,8 @@ Every dashboard is built from layout containers, so rows, columns and the filter
 - navigation bar with Back / Next;
 - filter panel on the left;
 - one horizontal container per row of sheets.
+
+Table columns are sized to fill their box; very wide tables keep 60 px columns and scroll sideways.
 
 ## Filters (left panel, every page)
 
@@ -40,7 +42,7 @@ Every dashboard is built from layout containers, so rows, columns and the filter
 | New Geo | New partners by region vs target, by tier, type and activity; segments; new geo cities |
 | Monthly Targets | Monthly Targets sheet: by month, chart, branch x month, Wiser / Zeta |
 | Yearly Targets | Branch Targets sheet: by region and branch, achievement bars |
-| Partner Targets | QTOD / ATOD: by branch, annual partner-wise (100% / 108%, Q1-Q4, Zeta, Wiser), quarter balance with monthly actuals |
+| Partner Targets | QTOD / ATOD partner-wise target vs achievement, as the old Target vs Ach dashboard: 'Select a View' picks Annual, QTOD Q1 / Q2 / Q3 / Q4 (quarter target, sales, Ach %, balance, each month's sales and Ach %), Wiser or Zeta |
 | SSP | SSP target vs achievement, with vs without SSP, trend, top SSP partners |
 | Pavilion | KPIs and published tables; KRO primary purchases vs target; RO pavilions buying in primary are listed for checking |
 | MTD | The original MTD views: KPIs, focus products, leaderboard, region bars, daily trend, and 'Select a view' (branch, activity, ASM, focus products, partner, product) |

@@ -76,6 +76,7 @@ class Sheet:
         self.manual_sort = ""
         self.rows = self.cols = ""
         self.rows_total = False
+        self.cols_total = False
         self.mark = "Text"
         self.encodings = []
         self.label = None
@@ -234,7 +235,8 @@ class Sheet:
         pane = (f"<pane selection-relaxation-option='selection-relaxation-allow'><view><breakdown value='auto' /></view>"
                 f"<mark class='{self.mark}' />{enc}{label}<style>{cell}<style-rule element='mark'>{mstyle}</style-rule></style></pane>")
         rows = f"<rows total='true'>{self.rows}</rows>" if (self.rows and self.rows_total) else (f"<rows>{self.rows}</rows>" if self.rows else "<rows />")
-        cols = f"<cols>{self.cols}</cols>" if self.cols else "<cols />"
+        cols = (f"<cols total='true'>{self.cols}</cols>" if (self.cols and self.cols_total)
+                else (f"<cols>{self.cols}</cols>" if self.cols else "<cols />"))
         return (f"<worksheet name={attr(self.name)}><layout-options><title><formatted-text>{self.title}</formatted-text></title></layout-options>"
                 f"<table>{view}{style}<panes>{pane}</panes>{rows}{cols}</table>"
                 f"<simple-id uuid='{new_uuid()}' /></worksheet>")
@@ -245,16 +247,47 @@ def is_value(R, caption):
     return R[caption].fmt == "n#,##0.0;-#,##0.0"
 
 
+def _grouped(i):
+    """Tableau expression: integer expression i with thousands separators."""
+    pad = lambda e: f"RIGHT('00' + STR({e}), 3)"
+    return (f"IF {i} >= 1000000000 THEN STR(INT({i} / 1000000000)) + ',' + {pad(f'INT({i} / 1000000) % 1000')} + ',' + {pad(f'INT({i} / 1000) % 1000')} + ',' + {pad(f'{i} % 1000')} "
+            f"ELSEIF {i} >= 1000000 THEN STR(INT({i} / 1000000)) + ',' + {pad(f'INT({i} / 1000) % 1000')} + ',' + {pad(f'{i} % 1000')} "
+            f"ELSEIF {i} >= 1000 THEN STR(INT({i} / 1000)) + ',' + {pad(f'{i} % 1000')} ELSE STR({i}) END")
+
+
+def as_text(R, cap):
+    """A text version of a numeric measure for KPI cards. Tableau shows #### when a number is wider
+    than the (narrow, fixed) cell of a sheet without headers; text is never replaced by ####."""
+    f = R[cap]
+    if f.datatype == "string":
+        return cap
+    tcap = f"{cap} (text)"
+    if tcap in R.by_caption:
+        return tcap
+    x = "{{" + cap + "}}"
+    if f.fmt == "p0.0%":
+        expr = f"IFNULL(STR(ROUND({x} * 100, 1)) + '%', '-')"
+    elif f.fmt == "n#,##0.0;-#,##0.0":
+        i = f"INT(ROUND(ABS({x}) * 10, 0) / 10)"
+        expr = (f"IFNULL((IF {x} < 0 THEN '-' ELSE '' END) + ({_grouped(i)}) + '.' + STR(INT(ROUND(ABS({x}) * 10, 0)) % 10), '-')")
+    else:
+        i = f"INT(ROUND(ABS({x}), 0))"
+        expr = f"IFNULL((IF {x} < 0 THEN '-' ELSE '' END) + ({_grouped(i)}), '-')"
+    R.calc(tcap, expr, "string", role="measure", ftype="nominal")
+    return tcap
+
+
 def kpi(R, name, title, big, line=None, units=None):
-    """KPI card: one big number and at most one context value (with three fields
-    on one text mark Tableau showed ####)."""
+    """KPI card: one big value and at most one context value, both as text."""
     if units is None:
         units = is_value(R, big)
     s = Sheet(R, name, title_runs(title, param_units=units), "kpi")
-    kind = lambda c: "usrn" if R[c].datatype == "string" else "usr"
+    big = as_text(R, big)
+    line = (line[0], as_text(R, line[1])) if line else None
+    kind = lambda c: "usrn"
     rb = s.use(big, kind(big))
     s.encodings.append(("text", rb))
-    lab = run(f"<{rb}>", C_TEXT, 17, True)
+    lab = run(f"<{rb}>", C_TEXT, 16, True)
     if line:
         pre, cap = line
         rl = s.use(cap, kind(cap))

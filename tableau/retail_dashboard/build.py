@@ -120,14 +120,16 @@ def clean_datasource(ds, R, dsname, aliases=None):
 
 
 def style_xml(R):
-    """Measure Names colours: this year green, last year grey, targets amber."""
+    """Measure Names colours: this year green, last year grey, two years ago light green, targets amber."""
     mn = lambda c: f'"[{DS}].[usr:{R[c].name}:qk]"'
     green = ["Sales", "OB", "MTD sales", "SSP sales"]
     grey = ["Sales PY", "OB PY", "MTD sales LY", "SSP sales PY"]
-    amber = ["Target"]
+    amber = ["Monthly target"]
+    light = ["Sales 2 years ago"]
     maps = "".join(f"<map to='{C_MID}'><bucket>{txt(mn(c))}</bucket></map>" for c in green)
     maps += "".join(f"<map to='{C_PY}'><bucket>{txt(mn(c))}</bucket></map>" for c in grey)
     maps += "".join(f"<map to='{C_TARGET}'><bucket>{txt(mn(c))}</bucket></map>" for c in amber)
+    maps += "".join(f"<map to='#9fd3b5'><bucket>{txt(mn(c))}</bucket></map>" for c in light)
     return f"<style><style-rule element='mark'><encoding attr='color' field='[:Measure Names]' type='palette'>{maps}</encoding></style-rule></style>"
 
 

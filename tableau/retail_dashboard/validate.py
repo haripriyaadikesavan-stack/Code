@@ -152,7 +152,8 @@ def main(path):
                         errs.append(f"sheet {name}: usr instance on row-level calc {calcs[n].get('caption')}")
                     if der in ("None", "Sum") and agg:
                         errs.append(f"sheet {name}: {der} instance on aggregate calc {calcs[n].get('caption')}")
-        texts = sum(1 for e in w.iter("text") if e.get("column"))
+        # numbers that do not fit show as ####; text fields (":nk]") are cut off instead
+        texts = sum(1 for e in w.iter("text") if e.get("column") and not e.get("column").endswith(":nk]"))
         if texts > 2 and w.find(".//mark").get("class") == "Text" and "Multiple Values" not in s:
             errs.append(f"sheet {name}: {texts} fields on one text mark (Tableau shows ####)")
 

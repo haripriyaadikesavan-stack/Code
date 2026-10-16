@@ -1,12 +1,12 @@
-# Retail Dashboard (Tableau) — v4, built from scratch
+# Retail Dashboard (Tableau) — built from scratch
 
-Builds `Retail Dashboard v4.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before. Every calculation, sheet and dashboard is new.
+Builds `Retail Dashboard v5.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before. Every calculation, sheet and dashboard is new.
 
 ```
-python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v4.twbx"
-python validate.py "Retail Dashboard v4.twb"        # references, tables, aggregation, layout, actions
-python order_check.py "Retail Dashboard v4.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
-python wire.py "Retail Dashboard v4.twb" wireframes  # optional PNG wireframes (needs matplotlib)
+python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v5.twbx"
+python validate.py "Retail Dashboard v5.twb"        # references, tables, aggregation, layout, actions
+python order_check.py "Retail Dashboard v5.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
+python wire.py "Retail Dashboard v5.twb" wireframes  # optional PNG wireframes (needs matplotlib)
 ```
 
 Needs `lxml`. The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored.
@@ -22,13 +22,13 @@ Each analysis appears once.
 
 | # | Chapter | Content |
 |---|---|---|
-| 1 | Overview | KPIs, three-year monthly trend, quarters vs last year, sales vs monthly target, region share, RD / KRO split |
+| 1 | Overview | KPIs, three-year monthly trend, quarters vs last year, region share, RD / KRO split |
 | 2 | Regions | Region scorecard, monthly sales by region, region x month achievement, branch sales, Wiser / Miluz Zeta by region. Click a region to filter the page. |
 | 3 | Branches | Branch scorecard, Wiser / Miluz Zeta by branch, ASM performance. Click a branch to see its ASMs. |
-| 4 | Products | Family value and quantity, activity (FD / WD ...), new products, classification, top 25 materials |
+| 4 | Products | Family value and quantity, activity (FD / WD ...), new products (Wiser, Miluz Zeta, Unica Pure Plus, UnicaX), classification, top 25 materials |
 | 5 | Partners | Achievement bands, slabs, tiers, new / revival by month, onboarded year, top 10, partners to watch |
 | 6 | All partners | Every partner's numbers: sales, last year, growth, FY target, Ach %, OB, backlog, days since last sale. Also every partner month by month, with Partner search. |
-| 7 | Targets | Branch x month achievement and QTOD / ATOD partner targets (annual 100% / 108%, quarters, Wiser, Zeta) |
+| 7 | Targets | Monthly target vs sales and achievement, by month and by branch x month; QTOD / ATOD partner targets (annual 100% / 108%, quarters, Wiser, Zeta) |
 | 8 | SSP & reach | SSP targets, with vs without SSP, SSP trend and top SSP partners, active and new cities by branch |
 | 9 | Pavilion | Pavilion partners vs target by branch, with primary purchases matched by GSTIN, plus the published slab and qualification tables |
 | 10 | MTD | Month to date vs the same days last year and this month's target; branches, ASMs, families, top partners |
@@ -46,7 +46,9 @@ The Region, Branch, Family, Activity and Partner type filters on the left apply 
   - OB = `Type = OB`, dated by `Calendar Day`.
   - Backlog = `Type = Backlog`, aged from `OrderCreationDate`, in the buckets < 20, 20-50, 51-100 and over 100 days.
 - **Growth:** compares the same dates last year. The three-year trend also shows the same dates two years ago.
-- **Monthly and yearly branch targets** are **net**. Gross = net ÷ 0.83.
+- **Monthly targets:** taken from the Monthly Targets sheet as they are, with no pro-rating or calculation. Each month in the period counts with its full target.
+- **Monthly and yearly branch targets** are **net**. Gross = net ÷ 0.83, as in the old workbook.
+- **KPI cards** show their values as formatted text. Tableau shows `####` when a number does not fit a sheet without headers.
 - **Partner targets** are **gross**. Net = gross × 0.83.
   - The FY target comes from the Partner Targets sheet, as the old Partner Ach% did.
   - The quarter, Wiser and Zeta views come from the QTOD / ATOD file.

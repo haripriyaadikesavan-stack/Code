@@ -487,6 +487,8 @@ def build_model(branches, branch_zone, families, rls_rules):
     S("Growth text", "IF ISNULL({{Growth %}}) THEN 'no sales last year' ELSE (IF {{Growth %}} >= 0 THEN '+' ELSE '' END) + STR(ROUND({{Growth %}} * 100, 1)) + '% vs last year' END")
     S("OB growth text", "IF ISNULL({{OB growth %}}) THEN 'no OB last year' ELSE (IF {{OB growth %}} >= 0 THEN '+' ELSE '' END) + STR(ROUND({{OB growth %}} * 100, 1)) + '% vs last year' END")
     A("Nav count", "COUNT([Type])", "integer", FMT_N)
+    # text (not a number) behind the navigation buttons: a number that does not fit shows ####
+    S("Nav text", "IF COUNT([Type]) > 0 THEN '' END")
     # MTD
     A("MTD sales", "SUM({{Sales MTD (row)}})")
     A("MTD sales LY", "SUM({{Sales MTD LY (row)}})")

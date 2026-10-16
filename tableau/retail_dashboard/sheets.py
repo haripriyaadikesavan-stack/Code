@@ -100,6 +100,7 @@ class Sheet:
         self.scales = []            # (field ref, scale)
         self.fit = "entire-view"    # dashboard zoom: entire-view | fit-width
         self.nav_target = None
+        self.top_field = None
 
     # -- helpers ---------------------------------------------------------
     def use(self, caption_or_field, kind):
@@ -173,6 +174,7 @@ class Sheet:
         self.slices.append(ref)
 
     def top_n(self, ref, field, n, by_row_caption):
+        self.top_field = field          # a shared filter on this field would replace the top N filter
         lvl = "[" + inst(field, "dim")[0] + "]"
         expr = f"SUM({self.R[by_row_caption].ref})"
         self.extra_fields.append(self.R[by_row_caption])
@@ -213,7 +215,7 @@ class Sheet:
                      + "".join(inst_xml(f, k) for f, k in self.uses if f.ds == d)
                      + "</datasource-dependencies>")
         sorts = ("<shelf-sorts>" + "".join(self.sorts) + "</shelf-sorts>") if self.sorts else ""
-        slices = ("<slices>" + "".join(f"<column>{s}</column>" for s in self.slices) + "</slices>") if self.slices else ""
+        slices = ("<slices>" + "".join(f"<column>{s}</column>" for s in dict.fromkeys(self.slices)) + "</slices>") if self.slices else ""
         view = (f"<view><datasources>{dss}</datasources>{deps}"
                 + "".join(self.filters) + self.manual_sort + sorts + slices + "<aggregation value='true' /></view>")
 
@@ -325,7 +327,7 @@ def kpi(R, name, title, big, line=None, units=None):
 
 def nav(R, page, label=None):
     s = Sheet(R, f"Nav | {label or page}", "", "nav")
-    ref = s.use("Nav count", "usr")
+    ref = s.use("Nav text", "usrn")
     s.encodings.append(("text", ref))
     s.bg = C_MID
     s.label = run(label or page, "#ffffff", 9, True)

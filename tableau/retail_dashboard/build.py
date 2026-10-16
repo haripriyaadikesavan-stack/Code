@@ -12,9 +12,11 @@ import zipfile
 
 from lxml import etree
 
-from core import C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, PDS, X, attr, new_uuid, txt
+from core import C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, DS_CAPTION, PDS, X, attr, inst_xml, new_uuid, txt
+
+SIDE_BG = "#e9f0ec"
 from model import build_model
-from pages import DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, build_sheets, params_for
+from pages import DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, build_sheets, filters_for, params_for
 from sheets import run
 
 W = 1400
@@ -143,73 +145,162 @@ def u(px, total):
     return str(int(round(px * 100000 / total)))
 
 
-class Zones:
+SIDE_W, HEAD_H, NAV_H, CTRL_H = 224, 56, 38, 58
+
+
+class Layout:
+    """Builds the zone tree of one dashboard from layout containers (Tableau 'layout-flow'),
+    so rows, columns and the filter panel can be rearranged in Tableau."""
+
     def __init__(self, H):
-        self.H, self.n, self.items = H, 1, []
+        self.H, self.n = H, 1
 
-    def zone(self, x, y, w, h, inner, bg=None, margin=0, padding=0, **a):
+    def _id(self):
         self.n += 1
+        return self.n
+
+    def box(self, x, y, w, h, inner="", children=(), style=None, fixed=None, **a):
         extra = "".join(f" {k.replace('_', '-')}={attr(v)}" for k, v in a.items())
-        style = ("<zone-style><format attr='border-color' value='#000000' /><format attr='border-style' value='none' />"
-                 f"<format attr='border-width' value='0' /><format attr='margin' value='{margin}' />"
-                 + (f"<format attr='padding' value='{padding}' />" if padding else "")
-                 + (f"<format attr='background-color' value='{bg}' />" if bg else "") + "</zone-style>")
-        self.items.append(f"<zone h='{u(h, self.H)}' id='{self.n}'{extra} w='{u(w, W)}' x='{u(x, W)}' y='{u(y, self.H)}'>{inner}{style}</zone>")
+        if fixed is not None:
+            extra += f" fixed-size='{int(fixed)}' is-fixed='true'"
+        zs = ""
+        if style is not None:
+            bg, margin, padding = style
+            zs = ("<zone-style><format attr='border-color' value='#000000' /><format attr='border-style' value='none' />"
+                  f"<format attr='border-width' value='0' /><format attr='margin' value='{margin}' />"
+                  + (f"<format attr='padding' value='{padding}' />" if padding else "")
+                  + (f"<format attr='background-color' value='{bg}' />" if bg else "") + "</zone-style>")
+        return (f"<zone h='{u(h, self.H)}' id='{self._id()}'{extra} w='{u(w, W)}' x='{u(x, W)}' y='{u(y, self.H)}'>"
+                f"{inner}{''.join(children)}{zs}</zone>")
+
+    def flow(self, x, y, w, h, direction, children, fixed=None, style=None):
+        return self.box(x, y, w, h, children=children, fixed=fixed, style=style, param=direction, type_v2="layout-flow")
 
 
-def dashboard(R, dash):
-    H, items = LAYOUT[dash]
-    Z = Zones(H)
-    i = DASHBOARDS.index(dash)
-    head = (run("Retail Performance  ·  ", "#cfe9d7", 12) + run(f"Chapter {i + 1} of {len(DASHBOARDS)}   ", "#cfe9d7", 10)
-            + run(dash, "#ffffff", 18, True) + run("      " + NOTES[dash], "#cfe9d7", 10))
-    Z.zone(0, 0, W, 56, f"<formatted-text>{head}</formatted-text>", bg=C_DARK, padding=10, type_v2="text")
-    used = set()
-    # previous / next chapter (the story), top right
-    if i > 0:
-        Z.zone(W - 236, 12, 106, 32, "", bg=C_MID, name="Nav | ‹ Back", show_title="false")
-        used.add("Nav | ‹ Back")
-    if i < len(DASHBOARDS) - 1:
-        Z.zone(W - 122, 12, 106, 32, "", bg=C_MID, name="Nav | Next ›", show_title="false")
-        used.add("Nav | Next ›")
-    n = len(NAV)
-    gap, x0 = 4, 14
-    bw = (W - 2 * x0 - (n - 1) * gap) // n
-    for k, (label, target) in enumerate(NAV):
-        Z.zone(x0 + k * (bw + gap), 64, bw, 30, "", bg=C_DARK if target == dash else C_MID, name=f"Nav | {label}", show_title="false")
-        used.add(f"Nav | {label}")
-    Z.zone(14, 104, 200, 26, "<formatted-text>" + run("Filters & settings", C_DARK, 10, True) + "</formatted-text>", type_v2="text")
-    y = 132
+def content_height(rows):
+    return sum(h for h, _ in rows)
+
+
+def dashboard(R, S, dash):
+    rows = LAYOUT[dash]
     params = params_for(dash)
-    for pname, mode in params:
-        Z.zone(14, y, 200, 52, "", bg=C_BG, margin=2, mode=mode, param=f"[Parameters].[{pname}]", type_v2="paramctrl")
-        y += 54
-    note = SIDE_NOTE
-    if dash == "Pavilion":
-        note = ("The slab and qualification tables come from Pavilion_Unpivoted.xlsx as published; the filters do not apply to them.\n"
-                + SIDE_NOTE)
-    Z.zone(14, y + 6, 200, 300, "<formatted-text>" + run(note, C_MUTED, 8) + "</formatted-text>", type_v2="text")
-    for name, x, yy, w, h in items:
-        if name.startswith("H | "):
-            Z.zone(x, yy, w, h, "", bg="#eaf4ee", margin=4, padding=6, name=name, show_title="false")
-        else:
-            Z.zone(x, yy, w, h, "", bg="#ffffff", margin=4, padding=4, name=name, show_title="true")
+    filters = filters_for(dash)
+    on_page = [name for _, cells in rows for c in cells
+               for name in ([c[0]] if c[0] not in ("stack", "swap") else ([n for n, _ in c[2]] if c[0] == "stack" else c[2]))]
+    side_min = 30 + (len(params) + len(filters)) * CTRL_H + 220
+    body_h = max(content_height(rows), side_min)
+    H = HEAD_H + NAV_H + body_h + 8
+    L = Layout(H)
+    used = set(on_page)
+    i = DASHBOARDS.index(dash)
+
+    # ---- header
+    head = (run("Retail Performance  ·  ", "#cfe9d7", 12) + run(f"{i + 1} / {len(DASHBOARDS)}   ", "#cfe9d7", 10)
+            + run(dash, "#ffffff", 18, True) + run("      " + NOTES[dash], "#cfe9d7", 10))
+    header = L.box(0, 0, W, HEAD_H, f"<formatted-text>{head}</formatted-text>", style=(C_DARK, 0, 10), fixed=HEAD_H, type_v2="text")
+
+    # ---- navigation: chapters, then back / next
+    nav_items = []
+    bn = 92
+    extra = [n for n, ok in (("Nav | ‹ Back", i > 0), ("Nav | Next ›", i < len(DASHBOARDS) - 1)) if ok]
+    n = len(NAV)
+    bw = (W - len(extra) * bn) / n
+    x = 0
+    for label, target in NAV:
+        nav_items.append(L.box(x, HEAD_H, bw, NAV_H, style=(C_DARK if target == dash else C_MID, 3, 0),
+                               name=f"Nav | {label}", show_title="false"))
+        used.add(f"Nav | {label}")
+        x += bw
+    for name in extra:
+        nav_items.append(L.box(x, HEAD_H, bn, NAV_H, style=(C_TARGET, 3, 0), fixed=bn, name=name, show_title="false"))
         used.add(name)
+        x += bn
+    nav = L.flow(0, HEAD_H, W, NAV_H, "horz", nav_items, fixed=NAV_H, style=(C_BG, 0, 0))
+
+    # ---- filter panel
+    y0 = HEAD_H + NAV_H
+    side = [L.box(0, y0, SIDE_W, 30, "<formatted-text>" + run("Filters & settings", C_DARK, 10, True) + "</formatted-text>",
+                  style=(None, 4, 4), fixed=30, type_v2="text")]
+    y = y0 + 30
+    for pname, mode in params:
+        side.append(L.box(0, y, SIDE_W, CTRL_H, style=("#ffffff", 3, 0), fixed=CTRL_H, mode=mode,
+                          param=f"[Parameters].[{pname}]", type_v2="paramctrl"))
+        y += CTRL_H
+    filter_deps = []
+    for field, _, _ in filters:
+        src = next((s for s in on_page if field in getattr(S.get(s), "filter_refs", {})), None)
+        if src is None:
+            continue
+        ref = S[src].filter_refs[field]
+        side.append(L.box(0, y, SIDE_W, CTRL_H, style=("#ffffff", 3, 0), fixed=CTRL_H, mode="checkdropdown", name=src,
+                          param=ref, show_apply="true", type_v2="filter", values="relevant"))
+        filter_deps.append(field)
+        y += CTRL_H
+    note = SIDE_NOTE if dash != "Pavilion" else (
+        "Slab and qualification tables come from Pavilion_Unpivoted.xlsx as published; the filters do not apply to them.\n" + SIDE_NOTE)
+    side.append(L.box(0, y, SIDE_W, y0 + body_h - y, "<formatted-text>" + run(note, C_MUTED, 8) + "</formatted-text>",
+                      style=(None, 6, 4), type_v2="text"))
+    sidebar = L.flow(0, y0, SIDE_W, body_h, "vert", side, fixed=SIDE_W, style=(SIDE_BG, 0, 0))
+
+    # ---- content: one horizontal container per row
+    cx, cw = SIDE_W, W - SIDE_W
+    content = []
+    y = y0
+    for h, cells in rows:
+        total = sum(c[1] if c[0] in ("stack", "swap") else c[1] for c in cells)
+        x = cx
+        kids = []
+        for c in cells:
+            wgt = c[1]
+            w = cw * wgt / total
+            if c[0] == "stack":
+                yy, sub = y, []
+                for name, hh in c[2]:
+                    sub.append(sheet_zone(L, S, name, x, yy, w, hh))
+                    yy += hh
+                kids.append(L.flow(x, y, w, h, "vert", sub))
+            elif c[0] == "swap":       # one sheet shows at a time; the others are empty and collapse
+                k = len(c[2])
+                sub = [sheet_zone(L, S, name, x, y + j * h / k, w, h / k, title=False) for j, name in enumerate(c[2])]
+                kids.append(L.flow(x, y, w, h, "vert", sub))
+            else:
+                kids.append(sheet_zone(L, S, c[0], x, y, w, h))
+            x += w
+        content.append(L.flow(cx, y, cw, h, "horz", kids, fixed=h))
+        y += h
+    if y < y0 + body_h:
+        content.append(L.box(cx, y, cw, y0 + body_h - y, type_v2="empty"))
+    body = L.flow(cx, y0, cw, body_h, "vert", content)
+    main = L.flow(0, y0, W, body_h, "horz", [sidebar, body])
+    page = L.flow(0, 0, W, H, "vert", [header, nav, main])
+
+    # ---- dependencies: parameters on the panel, fields of the filters
     pnames = sorted({p for p, _ in params})
-    pdeps = ""
-    if pnames:
-        pdeps = ("<datasources><datasource name='Parameters' /></datasources><datasource-dependencies datasource='Parameters'>"
-                 + "".join(R.params[p].column_xml() for p in pnames) + "</datasource-dependencies>")
+    deps = "<datasources><datasource name='Parameters' />" + (f"<datasource caption={attr(DS_CAPTION)} name='{DS}' />" if filter_deps else "") + "</datasources>"
+    deps += ("<datasource-dependencies datasource='Parameters'>" + "".join(R.params[p].column_xml() for p in pnames)
+             + "</datasource-dependencies>")
+    if filter_deps:
+        fields = [R[f] if f in R.by_caption else R.fields[f] for f in filter_deps]
+        closure, _ = R.closure({f.key for f in fields})
+        cols = sorted((R.fields[k] for k in closure), key=lambda f: f.name)
+        deps += (f"<datasource-dependencies datasource='{DS}'>" + "".join(f.column_xml() for f in cols)
+                 + "".join(inst_xml(f, "dim") for f in fields) + "</datasource-dependencies>")
     style = (f"<style><style-rule element='table'><format attr='background-color' value='{C_BG}' /></style-rule>"
              "<style-rule element='parameter-ctrl'><format attr='font-size' value='9' /><format attr='color' value='#333333' />"
              "<format attr='border-color' value='#d9d9d9' /><format attr='border-width' value='1' /><format attr='border-style' value='solid' />"
              "<format attr='background-color' value='#ffffff' /></style-rule>"
              f"<style-rule element='parameter-ctrl-title'><format attr='font-size' value='8' /><format attr='font-weight' value='bold' /><format attr='color' value='{C_DARK}' /></style-rule></style>")
-    root = (f"<zone h='100000' id='1' type-v2='layout-basic' w='100000' x='0' y='0'>{''.join(Z.items)}"
+    root = (f"<zone h='100000' id='1' type-v2='layout-basic' w='100000' x='0' y='0'>{page}"
             f"<zone-style><format attr='background-color' value='{C_BG}' /></zone-style></zone>")
     xml = (f"<dashboard name={attr(dash)}>{style}<size maxheight='{H}' maxwidth='{W}' minheight='{H}' minwidth='{W}' />"
-           f"{pdeps}<zones>{root}</zones><simple-id uuid='{new_uuid()}' /></dashboard>")
+           f"{deps}<zones>{root}</zones><simple-id uuid='{new_uuid()}' /></dashboard>")
     return X(xml), used
+
+
+def sheet_zone(L, S, name, x, y, w, h, title=True):
+    if name.startswith("H | "):
+        return L.box(x, y, w, h, style=("#eaf4ee", 4, 6), name=name, show_title="false")
+    return L.box(x, y, w, h, style=("#ffffff", 4, 4), name=name, show_title="true" if title else "false")
 
 
 def _action(caption, dash, sheet, target):
@@ -245,7 +336,8 @@ def actions_xml(S, dash_used):
 def windows_xml(S, dash_used):
     out = []
     for i, (dash, used) in enumerate(dash_used.items()):
-        vps = "".join(f"<viewpoint name={attr(n)}><zoom type='{S[n].fit}' /></viewpoint>" for n in sorted(used))
+        vps = "".join(f"<viewpoint name={attr(n)}>" + (f"<zoom type='{S[n].fit}' />" if S[n].fit else "") + "</viewpoint>"
+                      for n in sorted(used))
         mx = " maximized='true'" if i == 0 else ""
         out.append(f"<window class='dashboard'{mx} name={attr(dash)}><viewpoints>{vps}</viewpoints><active id='-1' />"
                    f"<simple-id uuid='{new_uuid()}' /></window>")
@@ -285,7 +377,7 @@ def main(src, out):
     dbs = etree.SubElement(root, "dashboards")
     dash_used = {}
     for d in DASHBOARDS:
-        el, used = dashboard(R, d)
+        el, used = dashboard(R, S, d)
         dbs.append(el)
         dash_used[d] = used
     missing = sorted({n for used in dash_used.values() for n in used if n not in S})

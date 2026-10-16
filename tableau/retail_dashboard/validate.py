@@ -162,7 +162,11 @@ def main(path):
         for z in d.iter("zone"):
             if z.get("name") and z.get("name") not in sheets:
                 errs.append(f"dashboard {d.get('name')}: unknown sheet {z.get('name')}")
-            if z.get("param") and "[" + z.get("param").split("].[")[1] not in params:
+            if z.get("type-v2") == "filter":
+                ws = sheets.get(z.get("name"))
+                if ws is None or z.get("param") not in etree.tostring(ws).decode():
+                    errs.append(f"dashboard {d.get('name')}: filter {z.get('param')} not on sheet {z.get('name')}")
+            if z.get("type-v2") == "paramctrl" and "[" + z.get("param").split("].[")[1] not in params:
                 errs.append(f"dashboard {d.get('name')}: unknown param {z.get('param')}")
             if int(z.get("y")) + int(z.get("h")) > 100000 or int(z.get("x")) + int(z.get("w")) > 100000:
                 errs.append(f"dashboard {d.get('name')}: zone {z.get('name') or z.get('id')} overflows")

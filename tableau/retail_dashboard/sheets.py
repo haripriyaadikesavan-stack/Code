@@ -20,6 +20,17 @@ def mv(ds):
 # stepped colour scales (worksheet level, as in the Retail workbook)
 ACH_SCALE = (0.5, 1.5, 4, ["#c0392b", "#e8a33d", "#7fbf7b", "#1f7a4d"])      # <75% | 75-100% | 100-125% | >125%
 GROWTH_SCALE = (-0.5, 0.5, 2, ["#c0392b", "#1f7a4d"])                         # declining | growing
+NEUTRAL_SCALE = (0, 1, 2, ["#333333", "#333333"])                             # plain text colour
+
+
+def column_scale(caption):
+    """Font colour of a table column: growth red / green, achievement red / amber / green, others plain."""
+    c = caption.lower()
+    if "growth" in c:
+        return GROWTH_SCALE
+    if "ach %" in c or "qualifier %" in c:
+        return ACH_SCALE
+    return NEUTRAL_SCALE
 
 
 def run(text, color=C_TEXT, size=9, bold=False):
@@ -51,12 +62,12 @@ NO_LINES = """
 <format attr='stroke-size' scope='cols' value='0' /><format attr='line-visibility' scope='cols' value='off' /></style-rule>
 """
 TABLE_STYLE = f"""
-<style-rule element='cell'><format attr='font-weight' data-class='total' value='bold' /><format attr='font-weight' data-class='subtotal' value='bold' />
+<style-rule element='cell'><format attr='font-weight' data-class='total' scope='rows' value='bold' /><format attr='font-weight' data-class='subtotal' scope='rows' value='bold' />
 <format attr='color' data-class='total' value='{C_DARK}' /><format attr='text-align' value='right' /><format attr='vertical-align' value='center' /></style-rule>
 <style-rule element='header'><format attr='band-color' scope='rows' value='{C_BAND}' /><format attr='band-size' scope='rows' value='1' />
 <format attr='background-color' scope='cols' value='{C_HEAD_BG}' /><format attr='font-weight' scope='cols' value='bold' /><format attr='color' scope='cols' value='{C_DARK}' />
 <format attr='background-color' data-class='total' value='#dfeae4' /><format attr='background-color' data-class='subtotal' value='#eef3f0' />
-<format attr='font-weight' data-class='total' value='bold' /><format attr='font-weight' data-class='subtotal' value='bold' /><format attr='color' data-class='total' value='{C_DARK}' /></style-rule>
+<format attr='font-weight' data-class='total' scope='rows' value='bold' /><format attr='font-weight' data-class='subtotal' scope='rows' value='bold' /><format attr='color' data-class='total' value='{C_DARK}' /></style-rule>
 <style-rule element='field-labels'><format attr='font-weight' value='bold' /><format attr='color' value='{C_DARK}' /><format attr='background-color' value='{C_HEAD_BG}' /></style-rule>
 <style-rule element='pane'><format attr='band-color' scope='rows' value='{C_BAND}' /><format attr='band-size' scope='rows' value='1' />
 <format attr='background-color' data-class='total' value='#dfeae4' /><format attr='background-color' data-class='subtotal' value='#eef3f0' /></style-rule>
@@ -139,6 +150,17 @@ class Sheet:
         self.filters.append(f"<filter class='categorical' column='{ref}'{ctx}>{inner}</filter>")
         self.slices.insert(0, ref)
 
+    def shared_filter(self, field, group, context=True):
+        """All values selected; the same filter (filter-group) on every sheet makes it one dashboard filter."""
+        f = self.R[field] if isinstance(field, str) and field in self.R.by_caption else (self.R.fields[field] if isinstance(field, str) else field)
+        ref = self.use(f, "dim")
+        lvl = "[" + inst(f, "dim")[0] + "]"
+        ctx = " context='true'" if context else ""
+        self.filters.append(f"<filter class='categorical' column='{ref}'{ctx} filter-group='{group}'><groupfilter function='level-members' level='{lvl}' "
+                            f"user:ui-enumeration='all' user:ui-marker='enumerate' /></filter>")
+        self.slices.insert(0, ref)
+        return ref
+
     def nonnull(self, caption):
         ref = self.use(caption, "usr")
         self.filters.append(f"<filter class='quantitative' column='{ref}' included-values='non-null' />")
@@ -207,7 +229,7 @@ class Sheet:
         if self.scales:
             enc = ""
             for ref, (lo, hi, steps, colors) in self.scales:
-                enc += (f"<encoding attr='color' field='{ref}' max='{hi}' min='{lo}' num-steps='{steps}' type='custom-interpolated'>"
+                enc += (f"<encoding attr='color' field='{ref}' include-totals='true' max='{hi}' min='{lo}' num-steps='{steps}' type='custom-interpolated'>"
                         "<color-palette custom='true' name='' type='ordered-diverging'>"
                         + "".join(f"<color>{c}</color>" for c in colors) + "</color-palette></encoding>")
             style += f"<style-rule element='mark'>{enc}</style-rule>"
@@ -219,7 +241,9 @@ class Sheet:
 
         order = ["color", "size", "shape", "lod", "text", "tooltip"]
         encs = sorted(self.encodings, key=lambda e: order.index(e[0]))
-        enc = "".join(f"<{t} column='{r}' />" for t, r in encs)
+        # colour by Measure Values with one legend per measure (as the old workbook): per-column font colours
+        enc = "".join(f"<{t} column='{r}'" + (" separate-domains='true'" if t == "color" and r.endswith("[Multiple Values]") else "") + " />"
+                      for t, r in encs)
         enc = f"<encodings>{enc}</encodings>" if enc else ""
         label = f"<customized-label><formatted-text>{self.label}</formatted-text></customized-label>" if self.label else ""
         mstyle = ""
@@ -273,7 +297,7 @@ def as_text(R, cap):
     else:
         i = f"INT(ROUND(ABS({x}), 0))"
         expr = f"IFNULL((IF {x} < 0 THEN '-' ELSE '' END) + ({_grouped(i)}), '-')"
-    R.calc(tcap, expr, "string", role="measure", ftype="nominal")
+    R.calc(tcap, expr, "string", role="measure", ftype="nominal", ds=f.ds)
     return tcap
 
 

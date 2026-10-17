@@ -1,12 +1,12 @@
 # Retail Dashboard (Tableau) — built from scratch
 
-Builds `Retail Dashboard v11.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before.
+Builds `Retail Dashboard v12.twbx` from the data source of `Overall Retail Dashboard.twbx`. It reuses the same SharePoint files, relationships and extract, so the refresh works as before.
 
 ```
-python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v11.twbx"
-python validate.py "Retail Dashboard v11.twb"        # references, tables, aggregation, filters, actions
-python order_check.py "Retail Dashboard v11.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
-python wire.py "Retail Dashboard v11.twb" wireframes  # optional PNG wireframes (needs matplotlib)
+python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v12.twbx"
+python validate.py "Retail Dashboard v12.twb"        # references, tables, aggregation, filters, actions
+python order_check.py "Retail Dashboard v12.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
+python wire.py "Retail Dashboard v12.twb" wireframes  # optional PNG wireframes (needs matplotlib)
 ```
 
 Needs `lxml`. The source can be the original workbook or a later Retail Dashboard whose extract has had tables removed: sheets that need a removed table are left out (and listed when building). The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored.

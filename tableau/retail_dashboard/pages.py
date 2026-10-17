@@ -409,7 +409,7 @@ def build_sheets(R):
     add(table(R, "PO | Summary", "Policy categories - partners and sales", ["Policy group", "Policy category"],
               ["Partners (count)", "FY PY sales", "Sales PY", "Sales", "Growth %", "Share of sales %"],
               sub="Old = bought before last year; Handholding = onboarded last year with over 5 L; New = new this year, Q4 last year or under 5 L",
-              widths=[140, 170], nonnull="Has sales (agg)"))
+              widths=[130, 150], nonnull="Has sales (agg)"))
     add(matrix(R, "PO | Buckets", "Handholding and new partners by last year's sales", ["FY PY sales bucket"], "Policy category",
                "Partners (count)", nonnull="Has sales (agg)", widths=[130]))
     S["PO | Buckets"].member_filter("Policy group", ["Handholding Partner", "New Partner"], context=False)

@@ -427,6 +427,8 @@ def build_model(branches, branch_zone, families, rls_rules):
                 cond.append(f"ISNULL({field})")
             if cond:
                 parts.append(f"(ISMEMBEROF('{group}') AND ({' OR '.join(cond)}))")
+        if not rls_rules:
+            return "TRUE"       # no branch user filter in the source workbook
         return " OR ".join(parts) if parts else "FALSE"
     C("Branch access (sales)", rls_expr("[Branch (Geography mapping)]"), "boolean")
     C("Branch access (partner targets)", rls_expr("{{Target partner branch}}"), "boolean")

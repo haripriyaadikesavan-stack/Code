@@ -56,6 +56,23 @@ def read_source(twbx):
     return tmp, etree.parse(os.path.join(tmp, name))
 
 
+def rls_from_calc(ds):
+    """A workbook built by this generator has no user filter group any more: read the same rules back from its
+    'Branch access (sales)' calculation. No such calculation: no rules (everyone sees every branch)."""
+    import html
+    c = next((c for c in ds.findall("column") if c.get("caption") == "Branch access (sales)"), None)
+    if c is None:
+        return []
+    f = html.unescape(c.find("calculation").get("formula"))
+    rules = []
+    for m in re.finditer(r"\(ISMEMBEROF\('([^']+)'\) AND \((.*?)\)\)(?= OR \(ISMEMBEROF|$)", f):
+        group, cond = m.group(1), m.group(2)
+        im = re.search(r"IN \(([^)]*)\)", cond)
+        names = re.findall(r"'([^']*)'", im.group(1)) if im else []
+        rules.append((group, names, "ISNULL(" in cond))
+    return rules
+
+
 def missing_fields(R, ds_by_name):
     """Base fields of the model whose table is not in the data source any more (e.g. a table removed from the
     extract), and every calculation that depends on one."""
@@ -100,7 +117,7 @@ def rls_rules(ds):
     """Read the 'Branch RLS' user filter: [(group, [branches], include_null)]."""
     gs = [x for x in ds.findall("group") if x.get("name") == "[User Filter 2]"]
     if not gs:
-        return []           # no user filter in this workbook: everyone sees every branch
+        return rls_from_calc(ds)
     g = gs[0]
     union = g[0][1]
     rules = []
@@ -240,7 +257,8 @@ def need_height(s, w, fit=True):
     if s.cols:
         hs = s.header_style()
         head = int(re.search(r"value='(\d+)'", hs).group(1)) if hs else 26
-    return 26 + 22 * lines(title, 7.4) + sum(14 * lines(x, 5.2) for x in subs) + head + 22 * s.est_rows + 6
+    # + room for a horizontal scroll bar and Tableau's row padding (the v10 / v11 PDFs showed the last row cut)
+    return 26 + 22 * lines(title, 7.4) + sum(14 * lines(x, 5.2) for x in subs) + head + 23 * s.est_rows + 30
 
 
 def cell_names(c):
@@ -491,7 +509,7 @@ def fit_columns(s, w):
     n = getattr(s, "n_measures", 0)
     if not n:
         return
-    col = max(60, int((w - 8 - 8 - 18 - dims) / n))
+    col = max(60, int((w - 8 - 8 - 24 - dims) / n))
     s.widths = [(ref, wd) for ref, wd in s.widths if not ref.endswith("[:Measure Names]")] + [(s.mn, col)]
     s.fit = None
 

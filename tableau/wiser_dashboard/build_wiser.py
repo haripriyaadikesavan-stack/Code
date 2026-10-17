@@ -50,8 +50,8 @@ def main(src, out):
 
     S = wiser_pages.build_sheets(R)
     for tag in ("repository-location", "actions", "worksheets", "dashboards", "windows", "datagraph", "thumbnails"):
-        e = root.find(tag)
-        if e is not None:
+        # also the copies Tableau saves under a version-tagged name (e.g. '_.fcp.DatagraphCoreV1.true...datagraph')
+        for e in [e for e in root if str(e.tag) == tag or str(e.tag).endswith("..." + tag)]:
             root.remove(e)
     ws = etree.SubElement(root, "worksheets")
     dbs = etree.SubElement(root, "dashboards")

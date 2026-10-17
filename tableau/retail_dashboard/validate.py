@@ -49,6 +49,10 @@ def main(path):
     root = etree.parse(path).getroot()
     errs = []
     ranks = [next((i for i, t in enumerate(ORDER) if str(c.tag) == t or str(c.tag).endswith("..." + t)), 99) for c in root]
+    base = [str(c.tag).split("...")[-1] for c in root]
+    dups = sorted({b for b in base if base.count(b) > 1})
+    if dups:
+        errs.append(f"top-level element(s) appear more than once: {dups}")
     if ranks != sorted(ranks) or 99 in ranks:
         errs.append(f"top-level element order: {[c.tag for c in root]}")
     dsl = root.find("datasources")

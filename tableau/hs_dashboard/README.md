@@ -18,7 +18,7 @@ The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored
 ## Rules
 
 - **Net:** Gross × (1 − rebate). This year's rate applies to this year's rows (and open backlog); last year's rate applies to earlier rows.
-- **GTM:** Retail = pricing class EKR / ERW, or activity FD. Everything else is Project.
+- **GTM:** Retail = pricing class EKR / ERW, or activity FD. Everything else is Project. The pricing class only defines GTM; there is no pricing-class analysis.
   - The panel's *Business (GTM)* switch shows All, Retail or Project.
   - Targets and commits use their own Retail / Project category.
 - **Activity:** WD (HDCWD, HSCWD), FD (HDCFD, PPCFD), COS, SPE, EVC (PREVC).

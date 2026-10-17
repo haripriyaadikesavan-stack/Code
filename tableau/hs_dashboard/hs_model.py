@@ -43,7 +43,7 @@ def build_model(rls_rules, editable=True):
     b("Net Sales", "real", "measure", "quantitative", "Net Sales (source)")
     b("BillingQuantity", "integer", "measure", "quantitative", "Billing Quantity")
     b("HeliosCode", "string", "dimension", "nominal", "Activity code")
-    b("PricingClassL3", "string", "dimension", "nominal", "Pricing class")
+    b("PricingClassL3", "string", "dimension", "nominal", "Pricing class (GTM rule)")
     b("SoldToPartyID", "string", "dimension", "nominal", "Sold To Party ID")
     b("SoldToPartyName", "string", "dimension", "nominal", "Sold To Party Name")
     b("Patner (Partner Master Data)", "string", "dimension", "nominal", "Partner Name")
@@ -102,7 +102,7 @@ def build_model(rls_rules, editable=True):
     P("p GTM", "Business (GTM)", "string", "All", ["All", "Retail", "Project"])
     P("p MTD view", "Select a view", "string", MTD_VIEWS[0][1], [v for _, v in MTD_VIEWS])
     P("p Dim", "Explore by", "string", "Branch",
-      ["Region", "Branch", "ASM", "Partner", "Activity", "GTM", "Family", "Product classification", "Pricing class",
+      ["Region", "Branch", "ASM", "Partner", "Activity", "GTM", "Family", "Product classification",
        "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter", "New product category", "Partner status"])
     if editable:
         P("p Rebate retail CY", "Retail rebate - this year", "real", REBATES["retail_cy"])
@@ -257,7 +257,7 @@ def build_model(rls_rules, editable=True):
       "WHEN 'Region' THEN {{Region}} WHEN 'Branch' THEN {{Branch}} WHEN 'ASM' THEN IFNULL([ASM], 'Unmapped') "
       "WHEN 'Partner' THEN {{Partner}} WHEN 'Activity' THEN {{Activity}} WHEN 'GTM' THEN {{GTM}} WHEN 'Family' THEN {{Family}} "
       "WHEN 'Product classification' THEN IFNULL([Classification (Sheet1)], 'Unmapped') "
-      "WHEN 'Pricing class' THEN IFNULL([PricingClassL3], 'Unmapped') WHEN 'Tier' THEN IFNULL([Tier Category], 'Unmapped') "
+      "WHEN 'Tier' THEN IFNULL([Tier Category], 'Unmapped') "
       "WHEN 'Partner type' THEN IFNULL([RD/KRO], 'Unmapped') WHEN 'SSP / SSA' THEN IFNULL([SSA], 'Unmapped') "
       "WHEN 'City' THEN IFNULL([City (Geography mapping)], 'Unmapped') WHEN 'Month' THEN {{Month}} "
       "WHEN 'Quarter' THEN {{Quarter}} WHEN 'New product category' THEN {{New product category}} "

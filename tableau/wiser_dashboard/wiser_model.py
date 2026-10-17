@@ -33,7 +33,7 @@ def build_model(rls_rules):
     b("Gross Sales", "real", "measure", "quantitative")
     b("Net Sales", "real", "measure", "quantitative")
     b("BillingQuantity", "integer", "measure", "quantitative", "Billing Quantity")
-    b("PricingClassL3", "string", "dimension", "nominal", "Pricing class")
+    b("PricingClassL3", "string", "dimension", "nominal", "Pricing class (GTM rule)")
     b("SoldToPartyID", "string", "dimension", "nominal", "Sold To Party ID")
     b("SoldToPartyName", "string", "dimension", "nominal", "Sold To Party Name")
     b("Patner (Partner Master Data)", "string", "dimension", "nominal", "Partner Name")
@@ -87,7 +87,7 @@ def build_model(rls_rules):
     P("p GTM", "Business (GTM)", "string", "All", ["All", "Retail", "Project"])
     P("p MTD view", "Select a view", "string", MTD_VIEWS[0][1], [v for _, v in MTD_VIEWS])
     P("p Dim", "Explore by", "string", "Branch",
-      ["Region", "Branch", "Wiser SPOC", "ASM", "Partner", "Wiser version", "GTM", "Pricing class", "Partner type", "City",
+      ["Region", "Branch", "Wiser SPOC", "ASM", "Partner", "Wiser version", "GTM", "Partner type", "City",
        "Material", "Month", "Quarter", "Partner status"])
 
     C = R.calc
@@ -207,7 +207,7 @@ def build_model(rls_rules):
       "CASE [Parameters].[p Dim] "
       "WHEN 'Region' THEN {{Region}} WHEN 'Branch' THEN {{Branch}} WHEN 'Wiser SPOC' THEN {{SPOC}} WHEN 'ASM' THEN IFNULL([ASM], 'Unmapped') "
       "WHEN 'Partner' THEN {{Partner}} WHEN 'GTM' THEN {{GTM}} "
-      "WHEN 'Pricing class' THEN IFNULL([PricingClassL3], 'Unmapped') WHEN 'Partner type' THEN IFNULL([RD/KRO], 'Unmapped') "
+      "WHEN 'Partner type' THEN IFNULL([RD/KRO], 'Unmapped') "
       "WHEN 'City' THEN IFNULL([City (Geography mapping)], 'Unmapped') WHEN 'Material' THEN IFNULL([MaterialDescription], 'Unmapped') "
       "WHEN 'Month' THEN {{Month}} WHEN 'Quarter' THEN {{Quarter}} WHEN 'Partner status' THEN {{Partner status}} END", "string")
 

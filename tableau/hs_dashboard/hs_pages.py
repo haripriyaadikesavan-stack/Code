@@ -129,8 +129,6 @@ def build_sheets(R):
     add(matrix(R, "GP | Branch", "Branch x business sales", ["Region", "Branch"], "GTM", "Sales", widths=[60, 100]))
     add(matrix(R, "GP | Activity", "Activity x business sales", ["Activity"], "GTM", "Sales", widths=[80]))
     add(lines_by(R, "GP | Trend", "Monthly sales - Retail vs Project", "Month", "GTM", "Sales"))
-    add(table(R, "GP | Pricing", "Sales by pricing class", ["GTM", "PricingClassL3"], G + ["Share of sales %"], widths=[80, 80],
-              sort_by="Sales"))
 
     # ---- Products
     add(table(R, "P | Family table", "Family performance (value and quantity)", ["Family"],
@@ -302,7 +300,7 @@ LAYOUT = {
                           (230, [("A | Activity", 1)]), (360, [("A | Monthly commit", 1), ("A | Commit chart", 1)]),
                           (600, [("A | Branch commit", 1)]), (900, [("A | Branch x activity", 1)])],
     "Retail vs Project": [K("K | Retail", "K | Retail share", "K | Sales", "K | Rebate"), (180, [("GP | GTM", 1)]),
-                          (300, [("GP | Trend", 2), ("GP | Activity", 1)]), (230, [("GP | Region", 1), ("GP | Pricing", 1)]),
+                          (300, [("GP | Trend", 2), ("GP | Activity", 1)]), (230, [("GP | Region", 1)]),
                           (600, [("GP | Branch", 1)])],
     "Products": [H("Products"), K("K | Sales", "K | Wiser", "K | Zeta", "K | Lara"), (600, [("P | Family table", 1)]),
                  (420, [("P | Family bars", 1), ("P | Classification", 1)]), (230, [("P | New products", 1)]),

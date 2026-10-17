@@ -52,7 +52,48 @@ def read_source(twbx):
     tmp = tempfile.mkdtemp()
     with zipfile.ZipFile(twbx) as z:
         z.extractall(tmp)
-    return tmp, etree.parse(os.path.join(tmp, SRC_TWB))
+    name = SRC_TWB if os.path.exists(os.path.join(tmp, SRC_TWB)) else [f for f in os.listdir(tmp) if f.endswith(".twb")][0]
+    return tmp, etree.parse(os.path.join(tmp, name))
+
+
+def missing_fields(R, ds_by_name):
+    """Base fields of the model whose table is not in the data source any more (e.g. a table removed from the
+    extract), and every calculation that depends on one."""
+    present = {}
+    for name, ds in ds_by_name.items():
+        present[name] = {m.findtext("local-name") for m in ds.find("connection").iter("metadata-record")
+                         if m.get("class") == "column"}
+    bad = {k for k, f in R.fields.items() if not f.is_calc and f.ref not in present.get(f.ds, set())}
+    changed = True
+    while changed:
+        changed = False
+        for k, f in R.fields.items():
+            if f.is_calc and k not in bad and f.deps & bad:
+                bad.add(k)
+                changed = True
+    return bad
+
+
+def drop_missing(R, S, bad):
+    """Remove the sheets that use a missing field, the layout cells that showed them, and the fields themselves."""
+    gone = set()
+    for n, s in list(S.items()):
+        keys, _ = R.closure({f.key for f, _ in s.uses} | {f.key for f in s.extra_fields})
+        if keys & bad:
+            gone.add(n)
+            del S[n]
+    for dash, rows in LAYOUT.items():
+        new = []
+        for h, cells in rows:
+            keep = [c for c in cells if all(n in S for n in cell_names(c))]
+            if keep:
+                new.append((h, keep))
+        rows[:] = new
+    for k in bad:
+        f = R.fields.pop(k)
+        if f.is_calc:
+            R.by_caption.pop(f.caption, None)
+    return sorted(gone)
 
 
 def rls_rules(ds):
@@ -537,6 +578,14 @@ def main(src, out):
     for k in ("2025-26 Growth %", "2025-26 Growth % (Sales!Classification!Summary)"):
         R.fields[f"{PDS}|{k}"].fmt = "p0.0%"
 
+    S = build_sheets(R)
+    bad = missing_fields(R, {DS: retail, PDS: pav})
+    if bad:
+        gone = drop_missing(R, S, bad)
+        print(f"tables missing from the data source: {len(bad)} fields; sheets left out: {', '.join(gone)}")
+        if any(n.startswith("V | ") for n in gone):
+            NOTES["Pavilion"] = "Pavilion slabs, qualification and app acceptance (as published)."
+
     clean_datasource(retail, R, DS, aliases={f"usr:{R[k].name}:qk": v for k, v in NP_ALIASES.items()})
     retail.insert(list(retail).index(retail.find("layout")) + 1, X(style_xml(R)))
     clean_datasource(pav, R, PDS, aliases=PAV_ALIASES)
@@ -545,8 +594,6 @@ def main(src, out):
     ds_list.append(params_datasource(R))
     ds_list.append(retail)
     ds_list.append(pav)
-
-    S = build_sheets(R)
     for tag in ("repository-location", "actions", "worksheets", "dashboards", "windows", "datagraph", "thumbnails"):
         e = root.find(tag)
         if e is not None:

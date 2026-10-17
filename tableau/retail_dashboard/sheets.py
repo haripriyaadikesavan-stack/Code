@@ -102,6 +102,7 @@ class Sheet:
         self.fit = "entire-view"    # dashboard zoom: entire-view | fit-width
         self.nav_target = None
         self.top_field = None
+        self.est_rows = None         # expected table rows (None: may be long)
 
     # -- helpers ---------------------------------------------------------
     def use(self, caption_or_field, kind):
@@ -197,7 +198,7 @@ class Sheet:
         if self.kind != "table" or not self.cols.endswith("[:Measure Names]") or not getattr(self, "header_names", None):
             return ""
         w = next((wd for ref, wd in self.widths if ref.endswith("[:Measure Names]")), 90)
-        per_line = max(5, int((w - 10) / 6.2))       # bold 9 pt, about 6 px a character
+        per_line = max(5, int((w - 10) / 7.0))       # bold 9 pt, about 7 px a character
         lines = min(4, max(len(textwrap.wrap(n.strip(), per_line, break_long_words=False)) or 1 for n in self.header_names))
         return f"<format attr='height' field='{self.mn}' value='{12 * lines + 14}' />"
 

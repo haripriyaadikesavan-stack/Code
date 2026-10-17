@@ -59,14 +59,14 @@ def build_model(branches, branch_zone, families, rls_rules):
     b("Pivot Field Values", "real", "measure", "quantitative", "Partner Target (gross)", table="PT")
     # ---- pavilion partners (Pavilion Sales sheet)
     b("Name of RO/KRO", "string", "dimension", "nominal", "Pavilion Partner", table="V")
-    b("Branch (Pavilion Sales)", "string", "dimension", "nominal", "Pavilion Branch (file)", table="V")
-    b("Zone/Region", "string", "dimension", "nominal", "Pavilion Region (file)", table="V")
+    b("Branch (Pavilion Sales)", "string", "dimension", "nominal", "Pavilion Branch", table="V")
+    b("Zone/Region", "string", "dimension", "nominal", "Pavilion Region", table="V")
     b("KRO/RO", "string", "dimension", "nominal", "Pavilion Type (KRO / RO)", table="V")
     b("City (Pavilion Sales)", "string", "dimension", "nominal", "Pavilion City", table="V")
     b("Active/Removed", "string", "dimension", "nominal", "Pavilion Status", table="V")
     b("Sales Manager", "string", "dimension", "nominal", "Pavilion Sales Manager", table="V")
     b("GSTIN no", "string", "dimension", "nominal", "Pavilion GSTIN", table="V")
-    b("2025 Target (Pavilion Sales)", "real", "measure", "quantitative", "Pavilion Target (file)", table="V")
+    b("2025 Target (Pavilion Sales)", "real", "measure", "quantitative", "Pavilion Target 2025", table="V")
     # ---- monthly targets (NET)
     b("Branch", "string", "dimension", "nominal", "Monthly Target Branch", table="T")
     b("Zone (Monthly Targets)", "string", "dimension", "nominal", "Monthly Target Region", table="T")
@@ -210,8 +210,11 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("Sales MTD (row)", "IF {{Is sale MTD}} THEN {{Value}} END", fmt=FMT_V)
     C("Sales MTD LY (row)", "IF {{Is sale MTD LY}} THEN {{Value}} END", fmt=FMT_V)
     C("OB MTD (row)", "IF {{Is OB MTD}} THEN {{Value}} END", fmt=FMT_V)
-    C("Sales yesterday (row)", "IF [Type] = 'Sales' AND DATE([InvoiceDate]) = DATEADD('day', -1, TODAY()) THEN {{Value}} END", fmt=FMT_V)
-    C("OB yesterday (row)", "IF [Type] = 'OB' AND [Calendar Day] = DATEADD('day', -1, TODAY()) THEN {{Value}} END", fmt=FMT_V)
+    # the latest day in the data (not 'yesterday', which is empty on Mondays and before a refresh)
+    C("Last sales date", "{FIXED : MAX(IF [Type] = 'Sales' THEN DATE([InvoiceDate]) END)}", "date")
+    C("Last OB date", "{FIXED : MAX(IF [Type] = 'OB' THEN [Calendar Day] END)}", "date")
+    C("Sales last billing day (row)", "IF [Type] = 'Sales' AND DATE([InvoiceDate]) = {{Last sales date}} THEN {{Value}} END", fmt=FMT_V)
+    C("OB last order day (row)", "IF [Type] = 'OB' AND [Calendar Day] = {{Last OB date}} THEN {{Value}} END", fmt=FMT_V)
     C("Backlog (row)", "IF [Type] = 'Backlog' THEN {{Value}} END", fmt=FMT_V)
     C("Qty CY (row)", "IF {{Is sale in period}} THEN [BillingQuantity] END", "integer", fmt=FMT_N)
     C("Qty PY (row)", "IF {{Is sale in PY period}} THEN [BillingQuantity] END", "integer", fmt=FMT_N)
@@ -235,6 +238,17 @@ def build_model(branches, branch_zone, families, rls_rules):
       "ELSEIF {{Partner sales in period (INR)}} < 2500000 THEN '3. 5 - 25 L' "
       "ELSEIF {{Partner sales in period (INR)}} < 10000000 THEN '4. 25 L - 1 Cr' "
       "ELSE '5. Above 1 Cr' END", "string")
+    C("Partner sales CY (growth lod)", "{FIXED [SoldToPartyID] : SUM({{Sales CY (row)}})}", fmt=FMT_V)
+    C("Partner sales PY (growth lod)", "{FIXED [SoldToPartyID] : SUM({{Sales PY (row)}})}", fmt=FMT_V)
+    C("Partner growth band",
+      "IF ISNULL([SoldToPartyID]) THEN NULL "
+      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 AND ZN({{Partner sales CY (growth lod)}}) > 0 THEN '5. New this period (no sales last year)' "
+      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 THEN '7. No sales either year' "
+      "ELSEIF ZN({{Partner sales CY (growth lod)}}) <= 0 THEN '6. No sales this period' "
+      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= 0.25 THEN '1. Growth 25% and above' "
+      "ELSEIF {{Partner sales CY (growth lod)}} >= {{Partner sales PY (growth lod)}} THEN '2. Growth 0-25%' "
+      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= -0.25 THEN '3. Decline 0-25%' "
+      "ELSE '4. Decline over 25%' END", "string")
     C("Backlog age (days)", "IF [Type] = 'Backlog' THEN DATEDIFF('day', [OrderCreationDate], TODAY()) END", "integer", fmt=FMT_N)
     C("Backlog ageing",
       "IF [Type] <> 'Backlog' THEN NULL "
@@ -484,8 +498,8 @@ def build_model(branches, branch_zone, families, rls_rules):
     A("MTD target", "SUM({{Target MTD (row)}})")
     pct("MTD Ach %", "{{Sales MTD (row)}}", "{{Target MTD (row)}}")
     A("MTD OB", "SUM({{OB MTD (row)}})")
-    A("Sales yesterday", "SUM({{Sales yesterday (row)}})")
-    A("OB yesterday", "SUM({{OB yesterday (row)}})")
+    A("Sales last billing day", "SUM({{Sales last billing day (row)}})")
+    A("OB last order day", "SUM({{OB last order day (row)}})")
     A("MTD Wiser sales", "SUM({{Wiser sales MTD (row)}})")
     A("MTD Zeta sales", "SUM({{Zeta sales MTD (row)}})")
     A("MTD Wiser target", "SUM({{Wiser target MTD (row)}})")
@@ -626,7 +640,7 @@ def build_model(branches, branch_zone, families, rls_rules):
 
     story("Overview",
           f"'Sales: ' + {N('{{Sales}}')} + {U} + ', ' + {G('{{Growth %}}')} + ' on the same period last year.'",
-          f"'Yearly target (Branch Targets sheet): ' + {P('{{Yearly Ach %}}')} + ' achieved with ' + {P('{{Year gone %}}')} + ' of the year gone; ' + {N('{{Balance to yearly target}}')} + {U} + ' to go.'",
+          f"'Yearly target: ' + {P('{{Yearly Ach %}}')} + ' achieved with ' + {P('{{Year gone %}}')} + ' of the year gone; ' + {N('{{Balance to yearly target}}')} + {U} + ' to go.'",
           f"IF {{{{Required run-rate / month}}}} > {{{{Current run-rate / month}}}} THEN 'Run-rate needed for the yearly target: ' + {N('{{Required run-rate / month}}')} + {U} + ' a month, against ' + {N('{{Current run-rate / month}}')} + {U} + ' so far.'"
           f" ELSE 'At the current run-rate of ' + {N('{{Current run-rate / month}}')} + {U} + ' a month the yearly target is on track.' END")
     story("Regions",
@@ -644,19 +658,19 @@ def build_model(branches, branch_zone, families, rls_rules):
     story("All partners",
           "'Every partner with sales, orders or backlog in the period or last year: ' + IFNULL(STR(COUNTD(IF {{Has activity}} = 1 THEN [SoldToPartyID] END)), '0') + ' partners.'")
     story("Targets",
-          f"'Monthly targets (Monthly Targets sheet): ' + {N('{{Monthly target}}')} + {U} + ', sales ' + {N('{{Sales}}')} + {U} + ', achievement ' + {P('{{Monthly Ach %}}')} + ' (gap ' + {N('{{Gap to monthly target}}')} + {U} + ').'",
+          f"'Monthly targets: ' + {N('{{Monthly target}}')} + {U} + ', sales ' + {N('{{Sales}}')} + {U} + ', achievement ' + {P('{{Monthly Ach %}}')} + ' (gap ' + {N('{{Gap to monthly target}}')} + {U} + ').'",
           f"'Yearly target: ' + {P('{{Yearly Ach %}}')} + ' achieved, ' + {N('{{Balance to yearly target}}')} + {U} + ' to go.  Partner targets: ' + {P('{{Partner FY Ach %}}')} + ' achieved overall.'")
     story("SSP",
           f"'Partners with an SSP bring ' + {P('{{With-SSP share %}}')} + ' of sales; SSP sales are ' + {G('{{SSP growth %}}')} + ' on last year and ' + {P('{{SSP Ach %}}')} + ' of SSP targets.'",
           f"{I('{{Active cities}}')} + ' cities bought in the period, ' + {I('{{New cities}}')} + ' of them for the first time.'")
     story("Pavilion",
-          f"{I('{{Pavilions}}')} + ' active pavilion partners in the Pavilion Sales file, with a target of ' + {N('{{Pavilion target}}')} + {U} + '.  Their primary purchases (matched by GSTIN): ' + {N('{{Sales}}')} + {U} + ' (' + {P('{{Pavilion Ach %}}')} + ').'")
+          f"{I('{{Pavilions}}')} +  ' active pavilion partners, with a target of ' + {N('{{Pavilion target}}')} + {U} + '.  Their primary purchases (matched by GSTIN): ' + {N('{{Sales}}')} + {U} + ' (' + {P('{{Pavilion Ach %}}')} + ').'")
     story("MTD",
           f"'Month to date: ' + {N('{{MTD sales}}')} + {U} + ', ' + {G('{{MTD growth %}}')} + ' on the same days last year and ' + {P('{{MTD Ach %}}')} + ' of the target for this month.'",
-          f"'Yesterday: ' + {N('{{Sales yesterday}}')} + {U} + ' sales and ' + {N('{{OB yesterday}}')} + {U} + ' orders.'")
+          f"'Last billing day (' + STR(MIN({{Last sales date}})) + '): ' + {N('{{Sales last billing day}}')} + {U} + ' sales.  Last order day (' + STR(MIN({{Last OB date}})) + '): ' + {N('{{OB last order day}}')} + {U} + ' orders.'")
     story("Orders",
           f"'Order book: ' + {N('{{OB}}')} + {U} + ' (' + {G('{{OB growth %}}')} + ' on last year); sales are ' + {P('{{Sales to OB %}}')} + ' of it.'",
-          f"'Open backlog: ' + {N('{{Backlog}}')} + {U} + ', of which ' + {P('{{Backlog over 50 days}} / {{Backlog}}')} + ' is older than 50 days.'")
+          f"'Open backlog: ' + {N('{{Backlog}}')} + {U} + ', of which ' + {P('{{Backlog over 50 days}} / {{Backlog}}')} +  ' was ordered more than 50 days ago.'")
 
     # ================================================================ Pavilion (summary tables, as published)
     PC = lambda cap, f, dt="real", fmt=FMT_N: C(cap, f, dt, role="measure", fmt=fmt, ds=PDS)

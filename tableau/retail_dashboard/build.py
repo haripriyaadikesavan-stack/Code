@@ -152,14 +152,14 @@ class Layout:
     """Builds the zone tree of one dashboard from layout containers (Tableau 'layout-flow'),
     so rows, columns and the filter panel can be rearranged in Tableau."""
 
-    def __init__(self, H):
-        self.H, self.n = H, 1
+    def __init__(self, H, width=None, start=1):
+        self.H, self.W, self.n = H, width or W, start
 
     def _id(self):
         self.n += 1
         return self.n
 
-    def box(self, x, y, w, h, inner="", children=(), style=None, fixed=None, **a):
+    def box(self, x, y, w, h, inner="", children=(), style=None, fixed=None, zid=None, **a):
         extra = "".join(f" {k.replace('_', '-')}={attr(v)}" for k, v in a.items())
         if fixed is not None:
             extra += f" fixed-size='{int(fixed)}' is-fixed='true'"
@@ -170,34 +170,80 @@ class Layout:
                   f"<format attr='border-width' value='0' /><format attr='margin' value='{margin}' />"
                   + (f"<format attr='padding' value='{padding}' />" if padding else "")
                   + (f"<format attr='background-color' value='{bg}' />" if bg else "") + "</zone-style>")
-        return (f"<zone h='{u(h, self.H)}' id='{self._id()}'{extra} w='{u(w, W)}' x='{u(x, W)}' y='{u(y, self.H)}'>"
+        self.last = zid if zid is not None else self._id()
+        return (f"<zone h='{u(h, self.H)}' id='{self.last}'{extra} w='{u(w, self.W)}' x='{u(x, self.W)}' y='{u(y, self.H)}'>"
                 f"{inner}{''.join(children)}{zs}</zone>")
 
     def flow(self, x, y, w, h, direction, children, fixed=None, style=None):
         return self.box(x, y, w, h, children=children, fixed=fixed, style=style, param=direction, type_v2="layout-flow")
 
 
-def content_height(rows):
-    return sum(h for h, _ in rows)
+def title_text(s):
+    t = re.sub(r"<[^>]+>", "", s.title or "")
+    return re.sub(r"&lt;\[Parameters\]\.\[p Units\]&gt;", "Mn", t).replace("&amp;", "&")
+
+
+def need_height(s, w, fit=True):
+    """Height a table needs to show all its rows (estimated), or None for charts and long tables."""
+    if s.kind != "table" or s.est_rows is None:
+        return None
+    if fit:
+        fit_columns(s, w)
+    title, *subs = title_text(s).split("\n")
+    lines = lambda text, px: max(1, -(-int(len(text) * px) // max(40, int(w) - 28)))
+    head = 0
+    if s.cols:
+        hs = s.header_style()
+        head = int(re.search(r"value='(\d+)'", hs).group(1)) if hs else 26
+    return 26 + 22 * lines(title, 7.4) + sum(14 * lines(x, 5.2) for x in subs) + head + 22 * s.est_rows + 6
+
+
+def cell_names(c):
+    return [c[0]] if c[0] not in ("stack", "swap") else ([n for n, _ in c[2]] if c[0] == "stack" else list(c[2]))
+
+
+def fit_rows(S, rows, cw):
+    """Row heights: rows of small tables get exactly the height their tables need; other rows keep their height."""
+    out = []
+    for h, cells in rows:
+        total = sum(c[1] for c in cells)
+        needs, other = [], False
+        for c in cells:
+            n = need_height(S[c[0]], cw * c[1] / total) if c[0] not in ("stack", "swap") else None
+            if n is None:
+                other = True
+            else:
+                needs.append(n)
+        if needs and max(needs) <= 900:
+            h = max(needs + ([h] if other else []))
+        out.append((h, cells))
+    return out
+
+
+PHONE_W = 375
+PHONE_FILTERS = ["Region", "Branch", "ASM", "Partner", "Policy category", "Partner growth band"]
 
 
 def dashboard(R, S, dash):
-    rows = LAYOUT[dash]
     params = params_for(dash)
     filters = filters_for(dash)
-    on_page = [name for _, cells in rows for c in cells
-               for name in ([c[0]] if c[0] not in ("stack", "swap") else ([n for n, _ in c[2]] if c[0] == "stack" else c[2]))]
+    cx, cw = SIDE_W, W - SIDE_W
+    rows = fit_rows(S, LAYOUT[dash], cw)
+    on_page = [name for _, cells in rows for c in cells for name in cell_names(c)]
     side_min = 30 + (len(params) + len(filters)) * CTRL_H + 220
-    body_h = max(content_height(rows), side_min)
+    body_h = max(sum(h for h, _ in rows), side_min)
     H = HEAD_H + NAV_H + body_h + 8
     L = Layout(H)
     used = set(on_page)
     i = DASHBOARDS.index(dash)
+    ids = {}            # zone ids by item, shared with the phone layout
 
     # ---- header
     head = (run("Retail Performance  ·  ", "#cfe9d7", 12) + run(f"{i + 1} / {len(DASHBOARDS)}   ", "#cfe9d7", 10)
             + run(dash, "#ffffff", 18, True) + run("      " + NOTES[dash], "#cfe9d7", 10))
-    header = L.box(0, 0, W, HEAD_H, f"<formatted-text>{head}</formatted-text>", style=(C_DARK, 0, 10), fixed=HEAD_H, type_v2="text")
+    head_xml = f"<formatted-text>{head}</formatted-text>"
+    header = L.box(0, 0, W, HEAD_H, head_xml, style=(C_DARK, 0, 10), fixed=HEAD_H, type_v2="text")
+    ids["header"] = L.last
 
     # ---- navigation: chapters, then back / next
     nav_items = []
@@ -206,13 +252,18 @@ def dashboard(R, S, dash):
     n = len(NAV)
     bw = (W - len(extra) * bn) / n
     x = 0
+    nav_names = []
     for label, target in NAV:
-        nav_items.append(L.box(x, HEAD_H, bw, NAV_H, style=(C_DARK if target == dash else C_MID, 3, 0),
-                               name=f"Nav | {label}", show_title="false"))
-        used.add(f"Nav | {label}")
+        name = f"Nav | {label}"
+        nav_items.append(L.box(x, HEAD_H, bw, NAV_H, style=(C_DARK if target == dash else C_MID, 3, 0), name=name, show_title="false"))
+        ids[name] = L.last
+        nav_names.append((name, C_DARK if target == dash else C_MID))
+        used.add(name)
         x += bw
     for name in extra:
         nav_items.append(L.box(x, HEAD_H, bn, NAV_H, style=(C_TARGET, 3, 0), fixed=bn, name=name, show_title="false"))
+        ids[name] = L.last
+        nav_names.append((name, C_TARGET))
         used.add(name)
         x += bn
     nav = L.flow(0, HEAD_H, W, NAV_H, "horz", nav_items, fixed=NAV_H, style=(C_BG, 0, 0))
@@ -222,9 +273,11 @@ def dashboard(R, S, dash):
     side = [L.box(0, y0, SIDE_W, 30, "<formatted-text>" + run("Filters & settings", C_DARK, 10, True) + "</formatted-text>",
                   style=(None, 4, 4), fixed=30, type_v2="text")]
     y = y0 + 30
+    controls = []       # (key, zone attributes) for the phone layout
     for pname, mode in params:
-        side.append(L.box(0, y, SIDE_W, CTRL_H, style=("#ffffff", 3, 0), fixed=CTRL_H, mode=mode,
-                          param=f"[Parameters].[{pname}]", type_v2="paramctrl"))
+        a = dict(mode=mode, param=f"[Parameters].[{pname}]", type_v2="paramctrl")
+        side.append(L.box(0, y, SIDE_W, CTRL_H, style=("#ffffff", 3, 0), fixed=CTRL_H, **a))
+        controls.append((pname, L.last, a))
         y += CTRL_H
     filter_deps = []
     for field, _, _ in filters:
@@ -232,32 +285,32 @@ def dashboard(R, S, dash):
         if src is None:
             continue
         ref = S[src].filter_refs[field]
-        side.append(L.box(0, y, SIDE_W, CTRL_H, style=("#ffffff", 3, 0), fixed=CTRL_H, mode="checkdropdown", name=src,
-                          param=ref, show_apply="true", type_v2="filter", values="relevant"))
+        a = dict(mode="checkdropdown", name=src, param=ref, show_apply="true", type_v2="filter", values="relevant")
+        side.append(L.box(0, y, SIDE_W, CTRL_H, style=("#ffffff", 3, 0), fixed=CTRL_H, **a))
+        controls.append((field, L.last, a))
         filter_deps.append(field)
         y += CTRL_H
     note = SIDE_NOTE if dash != "Pavilion" else (
-        "Slab and qualification tables come from Pavilion_Unpivoted.xlsx as published; the filters do not apply to them.\n" + SIDE_NOTE)
+        "Slab and qualification tables are as published; the filters do not apply to them.\n" + SIDE_NOTE)
     side.append(L.box(0, y, SIDE_W, y0 + body_h - y, "<formatted-text>" + run(note, C_MUTED, 8) + "</formatted-text>",
                       style=(None, 6, 4), type_v2="text"))
     sidebar = L.flow(0, y0, SIDE_W, body_h, "vert", side, fixed=SIDE_W, style=(SIDE_BG, 0, 0))
 
     # ---- content: one horizontal container per row
-    cx, cw = SIDE_W, W - SIDE_W
     content = []
     swaps = []
     y = y0
     for h, cells in rows:
-        total = sum(c[1] if c[0] in ("stack", "swap") else c[1] for c in cells)
+        total = sum(c[1] for c in cells)
         x = cx
         kids = []
         for c in cells:
-            wgt = c[1]
-            w = cw * wgt / total
+            w = cw * c[1] / total
             if c[0] == "stack":
                 yy, sub = y, []
                 for name, hh in c[2]:
                     sub.append(sheet_zone(L, S, name, x, yy, w, hh))
+                    ids[name] = L.last
                     yy += hh
                 kids.append(L.flow(x, y, w, h, "vert", sub))
             elif c[0] == "swap":
@@ -266,10 +319,12 @@ def dashboard(R, S, dash):
                 sub = []
                 for k, name in enumerate(c[2]):
                     sub.append(sheet_zone(L, S, name, x, y, w, h, title=True, hidden=k > 0))
-                    swaps.append((L.n, VISIBILITY[name]))
+                    ids[name] = L.last
+                    swaps.append((L.last, VISIBILITY[name]))
                 kids.append(L.flow(x, y, w, h, "vert", sub))
             else:
                 kids.append(sheet_zone(L, S, c[0], x, y, w, h))
+                ids[c[0]] = L.last
             x += w
         content.append(L.flow(cx, y, cw, h, "horz", kids, fixed=h))
         y += h
@@ -278,6 +333,8 @@ def dashboard(R, S, dash):
     body = L.flow(cx, y0, cw, body_h, "vert", content)
     main = L.flow(0, y0, W, body_h, "horz", [sidebar, body])
     page = L.flow(0, 0, W, H, "vert", [header, nav, main])
+
+    phone = phone_layout(S, dash, rows, ids, head_xml, nav_names, controls, L.n)
 
     # ---- dependencies: parameters on the panel, fields of the filters
     pnames = sorted({p for p, _ in params})
@@ -299,8 +356,76 @@ def dashboard(R, S, dash):
             f"<zone-style><format attr='background-color' value='{C_BG}' /></zone-style></zone>")
     sid = new_uuid()
     xml = (f"<dashboard name={attr(dash)}>{style}<size maxheight='{H}' maxwidth='{W}' minheight='{H}' minwidth='{W}' />"
-           f"{deps}<zones>{root}</zones><simple-id uuid='{sid}' /></dashboard>")
+           f"{deps}<zones>{root}</zones>{phone}<simple-id uuid='{sid}' /></dashboard>")
     return X(xml), used, [(sid, zid, field) for zid, field in swaps]
+
+
+def phone_layout(S, dash, rows, ids, head_xml, nav_names, controls, last_id):
+    """Phone layout (its own layout of the same dashboard; the desktop layout is not changed): one column with the
+    header, the chapter buttons three to a row, the settings and main filters, then every sheet in page order
+    (KPI cards two to a row). Items keep their desktop zone ids, as Tableau does."""
+    PW = PHONE_W
+    blocks = []         # (height, builder(L, y) -> xml)
+
+    def one(name, h, hidden=False):
+        a = {"hidden_by_user": "true"} if hidden else {}
+        if name.startswith("H | "):
+            return lambda L, y: L.box(0, y, PW, h, style=("#eaf4ee", 4, 6), fixed=h, zid=ids[name], name=name, show_title="false")
+        return lambda L, y: L.box(0, y, PW, h, style=("#ffffff", 4, 4), fixed=h, zid=ids[name], name=name, show_title="true", **a)
+
+    blocks.append((64, lambda L, y: L.box(0, y, PW, 64, head_xml, style=(C_DARK, 0, 8), fixed=64, zid=ids["header"], type_v2="text")))
+    for k in range(0, len(nav_names), 3):
+        trio = nav_names[k:k + 3]
+
+        def navrow(L, y, trio=trio):
+            kids = [L.box(j * PW / 3, y, PW / 3, 32, style=(colour, 2, 0), zid=ids[name], name=name, show_title="false")
+                    for j, (name, colour) in enumerate(trio)]
+            return L.flow(0, y, PW, 32, "horz", kids, fixed=32, style=(C_BG, 0, 0))
+        blocks.append((32, navrow))
+    for key, zid, a in controls:
+        if a["type_v2"] == "filter" and dash != "Pavilion" and key not in PHONE_FILTERS:
+            continue
+        blocks.append((54, lambda L, y, zid=zid, a=a: L.box(0, y, PW, 54, style=("#ffffff", 3, 0), fixed=54, zid=zid, **a)))
+    for h, cells in rows:
+        names = [n for c in cells for n in cell_names(c)]
+        if all(n.startswith("K | ") for n in names):
+            for k in range(0, len(names), 2):
+                pair = names[k:k + 2]
+
+                def kpis(L, y, pair=pair):
+                    kids = [L.box(j * PW / 2, y, PW / 2, 112, style=("#ffffff", 4, 4), zid=ids[n], name=n, show_title="true")
+                            for j, n in enumerate(pair)]
+                    return L.flow(0, y, PW, 112, "horz", kids, fixed=112)
+                blocks.append((112, kpis))
+            continue
+        for c in cells:
+            if c[0] == "swap":
+                hh = min(h, 640)
+
+                def swap(L, y, hh=hh, names=c[2]):
+                    kids = [one(n, hh, hidden=j > 0)(L, y) for j, n in enumerate(names)]
+                    return L.flow(0, y, PW, hh, "vert", kids, fixed=hh)
+                blocks.append((hh, swap))
+                continue
+            for name in cell_names(c):
+                s = S[name]
+                if name.startswith("H | "):
+                    hh = 150
+                else:
+                    need = need_height(s, PW, fit=False) if s.kind == "table" and s.est_rows is not None else None
+                    hh = need if need is not None else min(h, 560 if s.kind == "table" else 320)
+                blocks.append((hh, one(name, hh)))
+    PH = sum(h for h, _ in blocks) + 8
+    L = Layout(PH, width=PW, start=last_id)
+    y, kids = 0, []
+    for h, build in blocks:
+        kids.append(build(L, y))
+        y += h
+    col = L.flow(0, 0, PW, PH, "vert", kids)
+    root = (f"<zone h='100000' id='{L._id()}' type-v2='layout-basic' w='100000' x='0' y='0'>{col}"
+            f"<zone-style><format attr='background-color' value='{C_BG}' /></zone-style></zone>")
+    return (f"<devicelayouts><devicelayout name='Phone'><size maxheight='{PH}' minheight='{PH}' sizing-mode='vscroll' />"
+            f"<zones>{root}</zones></devicelayout></devicelayouts>")
 
 
 def fit_columns(s, w):

@@ -12,7 +12,11 @@ ORDER = ["document-format-change-manifest", "repository-location", "preferences"
 # metadata parent-name (physical table / union) -> logical table
 LOGICAL = {"[Year+]": "P", "[Partner Master Data]": "P", "[Geography mapping]": "P", "[Sheet1]": "P", "[SSA Mapping]": "P",
            "[Monthly Targets]": "T", "[QTOD - ATOD]": "Q", "[Branch Targets1]": "B", "[SSA Targets]": "S",
-           "[Partner Targets]": "PT", "[Pivot]": "PT", "[Pavilion Sales]": "V"}
+           "[Partner Targets]": "PT", "[Pivot]": "PT", "[Pavilion Sales]": "V",
+           # Home Solutions / Wiser workbooks
+           "[Activity wise Month Target]": "A", "[Product Targets]": "PR", "[Branch Targets]": "Z", "[Sheet11]": "M",
+           "[Wiser Branch Targets]": "W", "[Processed Data]": "SV", "[Wiser - Engineers]": "E", "[Geography mapping1]": "G1",
+           "[ASM_Branch Mapping1]": "P"}
 
 
 def strip_lod(f):
@@ -85,6 +89,8 @@ def main(path):
                     t |= tables(r, seen)
                 return t
             tb = meta.get(n)
+            if tb == "[Pivot]" and "[Processed Data]" in meta.values():
+                return {"SV"}       # Wiser: the pivot is the service data's product columns
             return {LOGICAL.get(tb, tb)} if tb else set()
         names = {}
         for n, c in cols.items():

@@ -1,0 +1,97 @@
+"""Build the Wiser dashboard (sales and services) from the data source of 'Wiser Performance Dashboard.twbx'.
+
+usage: python build_wiser.py <Wiser Performance Dashboard.twbx> <output.twbx>
+"""
+import os
+import shutil
+import sys
+import tempfile
+import zipfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "retail_dashboard"))
+
+from lxml import etree  # noqa: E402
+
+import build as engine  # noqa: E402  (the Retail layout engine)
+import wiser_model  # noqa: E402
+import wiser_pages  # noqa: E402
+from core import C_MID, C_PY, C_TARGET, DS, X, txt  # noqa: E402
+
+SRC_TWB = "Wiser Performance Dashboard.twb"
+HYPER = "Data/Extracts/federated_14wc2mc1wc09dr1b4kqf30.hyper"
+
+
+def style_xml(R):
+    mn = lambda c: f'"[{DS}].[usr:{R[c].name}:qk]"'
+    maps = "".join(f"<map to='{C_MID}'><bucket>{txt(mn(c))}</bucket></map>" for c in ["Sales", "OB", "MTD sales"])
+    maps += "".join(f"<map to='{C_PY}'><bucket>{txt(mn(c))}</bucket></map>" for c in ["Sales PY", "OB PY", "MTD sales LY"])
+    maps += f"<map to='{C_TARGET}'><bucket>{txt(mn('Monthly target'))}</bucket></map>"
+    maps += f"<map to='#9fd3b5'><bucket>{txt(mn('Sales 2 years ago'))}</bucket></map>"
+    return f"<style><style-rule element='mark'><encoding attr='color' field='[:Measure Names]' type='palette'>{maps}</encoding></style-rule></style>"
+
+
+def main(src, out):
+    engine.configure(wiser_pages, "Wiser Performance")
+    tmp = tempfile.mkdtemp()
+    with zipfile.ZipFile(src) as z:
+        z.extractall(tmp)
+    tree = etree.parse(os.path.join(tmp, SRC_TWB))
+    root = tree.getroot()
+    ds_list = root.find("datasources")
+    ds = [d for d in ds_list if d.get("name") == DS][0]
+    R = wiser_model.build_model(engine.rls_rules(ds))
+    engine.clean_datasource(ds, R, DS)
+    ds.insert(list(ds).index(ds.find("layout")) + 1, X(style_xml(R)))
+    for d in list(ds_list):
+        ds_list.remove(d)
+    ds_list.append(engine.params_datasource(R))
+    ds_list.append(ds)
+
+    S = wiser_pages.build_sheets(R)
+    for tag in ("repository-location", "actions", "worksheets", "dashboards", "windows", "datagraph", "thumbnails"):
+        e = root.find(tag)
+        if e is not None:
+            root.remove(e)
+    ws = etree.SubElement(root, "worksheets")
+    dbs = etree.SubElement(root, "dashboards")
+    dash_used, vis = {}, []
+    for d in wiser_pages.DASHBOARDS:
+        el, used, z = engine.dashboard(R, S, d)
+        dbs.append(el)
+        dash_used[d] = used
+        vis += z
+    missing = sorted({n for used in dash_used.values() for n in used if n not in S})
+    if missing:
+        raise ValueError(f"dashboards reference missing sheets: {missing}")
+    on_dash = set().union(*dash_used.values())
+    S = {n: s for n, s in S.items() if n in on_dash}
+    for s in S.values():
+        ws.append(X(s.xml()))
+    root.append(engine.actions_xml(S, dash_used))
+    root.append(engine.windows_xml(S, dash_used))
+    if vis:
+        root.append(engine.datagraph_xml(R, vis))
+    rank = lambda e: next((i for i, t in enumerate(engine.TOP_ORDER) if str(e.tag) == t or str(e.tag).endswith("..." + t)), 99)
+    kids = sorted(list(root), key=rank)
+    if any(rank(k) == 99 for k in kids):
+        raise ValueError(f"unknown top-level element(s): {[k.tag for k in kids if rank(k) == 99]}")
+    for k in kids:
+        root.remove(k)
+        root.append(k)
+
+    twb = etree.tostring(tree, xml_declaration=True, encoding="utf-8", pretty_print=True)
+    twb = twb.replace(b"<?xml version='1.0' encoding='utf-8'?>", b"<?xml version='1.0' encoding='utf-8' ?>", 1)
+    name = os.path.splitext(os.path.basename(out))[0]
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"{name}.twb", twb)
+        z.write(os.path.join(tmp, HYPER), HYPER)
+    open(out.replace(".twbx", ".twb"), "wb").write(twb)
+    shutil.rmtree(tmp)
+    print(f"built {out}: {len(S)} sheets, {len(wiser_pages.DASHBOARDS)} dashboards, "
+          f"{sum(1 for f in R.fields.values() if f.is_calc)} calculations")
+    return R, S
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])

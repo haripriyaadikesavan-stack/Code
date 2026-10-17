@@ -20,6 +20,7 @@ from pages import DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, VISIBILITY, 
 from sheets import run
 
 W = 1500
+TITLE = "Retail Performance"
 SRC_TWB = "Overall Retail Dashboard.twb"
 TOP_ORDER = ["document-format-change-manifest", "repository-location", "preferences", "style-theme", "style",
              "local-data", "datasources", "datasource-relationships", "mapsources", "shared-views", "actions",
@@ -56,7 +57,10 @@ def read_source(twbx):
 
 def rls_rules(ds):
     """Read the 'Branch RLS' user filter: [(group, [branches], include_null)]."""
-    g = [x for x in ds.findall("group") if x.get("name") == "[User Filter 2]"][0]
+    gs = [x for x in ds.findall("group") if x.get("name") == "[User Filter 2]"]
+    if not gs:
+        return []           # no user filter in this workbook: everyone sees every branch
+    g = gs[0]
     union = g[0][1]
     rules = []
     for f in union:
@@ -220,6 +224,15 @@ def fit_rows(S, rows, cw):
     return out
 
 
+def configure(pages, title):
+    """Use the layout engine for another workbook: its pages module (CHAPTERS, LAYOUT, filters ...) and header title."""
+    global DASHBOARDS, DRILL, LAYOUT, NAV, NOTES, SIDE_NOTE, VISIBILITY, filters_for, params_for, TITLE, PHONE_FILTERS
+    DASHBOARDS, DRILL, LAYOUT, NAV, NOTES = pages.DASHBOARDS, pages.DRILL, pages.LAYOUT, pages.NAV, pages.NOTES
+    SIDE_NOTE, VISIBILITY, filters_for, params_for = pages.SIDE_NOTE, pages.VISIBILITY, pages.filters_for, pages.params_for
+    PHONE_FILTERS = getattr(pages, "PHONE_FILTERS", PHONE_FILTERS)
+    TITLE = title
+
+
 PHONE_W = 375
 PHONE_FILTERS = ["Region", "Branch", "ASM", "Partner", "Policy category", "Partner growth band"]
 
@@ -239,7 +252,7 @@ def dashboard(R, S, dash):
     ids = {}            # zone ids by item, shared with the phone layout
 
     # ---- header
-    head = (run("Retail Performance  ·  ", "#cfe9d7", 12) + run(f"{i + 1} / {len(DASHBOARDS)}   ", "#cfe9d7", 10)
+    head = (run(f"{TITLE}  ·  ", "#cfe9d7", 12) + run(f"{i + 1} / {len(DASHBOARDS)}   ", "#cfe9d7", 10)
             + run(dash, "#ffffff", 18, True) + run("      " + NOTES[dash], "#cfe9d7", 10))
     head_xml = f"<formatted-text>{head}</formatted-text>"
     header = L.box(0, 0, W, HEAD_H, head_xml, style=(C_DARK, 0, 10), fixed=HEAD_H, type_v2="text")

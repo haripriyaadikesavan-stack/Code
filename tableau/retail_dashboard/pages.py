@@ -402,6 +402,10 @@ def build_sheets(R):
                   widths=[60, 100]))
     s.title = title_runs("Branch x family - <[Parameters].[p Show]>, this year vs last year",
                          "Value in the chosen units, or quantity (units sold); pick in 'Show'", param_units=False)
+    add(table(R, "P | Branch family qty", "Branch and family - quantity sold this year vs last year", ["Region", "Branch", "Family"],
+              ["Quantity", "Quantity PY", "Quantity growth %", "Sales", "Sales PY", "Growth %"],
+              sub="Quantity = units sold; same dates last year. Use the Region / Branch / Family filters to narrow it down",
+              widths=[60, 100, 170], nonnull="Has sales (agg)", sort_by="Quantity", sort_dims=[2]))
     add(table(R, "P | Top SKUs", "Top 25 materials", ["MaterialDescription"],
               G + ["Share of sales %", "Quantity"], sort_by="Sales",
               top=(25, "Sales CY (row)"), widths=[320], nonnull="Has sales (agg)", total=False))
@@ -727,7 +731,7 @@ LAYOUT = {
     "Branches": [H("Branches"), (600, [("B | Scorecard", 1)]), (440, [("B | Focus families", 1)]), (520, [("B | ASM table", 1)])],
     "Products": [H("Products"), K("K | Sales", "K | Wiser", "K | Zeta", "K | Quantity"), (440, [("P | Family table", 1)]),
                  (420, [("P | Family bars", 1), ("P | Classification", 1)]),
-                 (260, [("P | Activity", 1), ("P | New products", 1)]), (700, [("P | Branch x family", 1)]),
+                 (260, [("P | Activity", 1), ("P | New products", 1)]), (800, [("P | Branch family qty", 1)]), (700, [("P | Branch x family", 1)]),
                  (540, [("P | Top SKUs", 1)])],
     "Partners": [H("Partners"), K("K | Partners", "K | New partners", "K | Lapsed", "K | Per partner"),
                  (280, [("Pa | Ach bands", 1), ("Pa | Slabs", 1), ("Pa | Tier", 1)]),

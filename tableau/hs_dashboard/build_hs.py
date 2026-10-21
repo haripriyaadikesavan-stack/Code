@@ -72,6 +72,7 @@ def main(src, out, variant="editable"):
     ds_list = root.find("datasources")
     ds = [d for d in ds_list if d.get("name") == DS][0]
     R = hs_model.build_model(engine.rls_rules(ds), editable=editable)
+    engine.avoid_name_clashes(R, {DS: ds})
     engine.clean_datasource(ds, R, DS)
     ds.insert(list(ds).index(ds.find("layout")) + 1, X(style_xml(R)))
     add_month_keys(ds)

@@ -73,6 +73,7 @@ class Field:
         self.table = table              # P (primary), T (monthly targets), Q (QTOD), B (branch targets), S (SSA targets), X (none)
         self.ds = ds
         self.deps = set()               # names of fields referenced
+        self.label = None               # caption shown in Tableau, when it must differ from the model caption
         self.params = set()             # parameter names referenced
 
     @property
@@ -85,8 +86,8 @@ class Field:
 
     def column_xml(self, ns=True):
         a = []
-        if self.caption:
-            a.append(f"caption={attr(self.caption)}")
+        if self.label or self.caption:
+            a.append(f"caption={attr(self.label or self.caption)}")
         a.append(f"datatype={attr(self.datatype)}")
         if self.fmt:
             a.append(f"default-format={attr(self.fmt)}")

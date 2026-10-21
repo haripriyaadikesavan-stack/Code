@@ -41,6 +41,7 @@ def main(src, out):
     ds_list = root.find("datasources")
     ds = [d for d in ds_list if d.get("name") == DS][0]
     R = wiser_model.build_model(engine.rls_rules(ds))
+    engine.avoid_name_clashes(R, {DS: ds})
     engine.clean_datasource(ds, R, DS)
     ds.insert(list(ds).index(ds.find("layout")) + 1, X(style_xml(R)))
     for d in list(ds_list):

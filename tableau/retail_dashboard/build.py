@@ -73,6 +73,24 @@ def rls_from_calc(ds):
     return rules
 
 
+# shown names for calculations whose caption is also the name of a physical column (e.g. the Monthly Targets
+# sheet's 'Branch'): Tableau mixes the two up when it reloads the data source and drops the calculation
+CLASH_LABELS = {"Region": "Sales Region", "Branch": "Sales Branch", "Family": "Product Family", "Partner": "Partner (code)",
+                "Acceptance %": "App acceptance %"}
+
+
+def avoid_name_clashes(R, ds_by_name):
+    for name, ds in ds_by_name.items():
+        physical = set()
+        for m in ds.find("connection").iter("metadata-record"):
+            if m.get("class") == "column":
+                physical.add(m.findtext("local-name").strip("[]"))
+                physical.add(m.findtext("remote-name") or "")
+        for f in R.fields.values():
+            if f.is_calc and f.ds == name and f.caption in physical:
+                f.label = CLASH_LABELS.get(f.caption, f.caption + " (calc)")
+
+
 def missing_fields(R, ds_by_name):
     """Base fields of the model whose table is not in the data source any more (e.g. a table removed from the
     extract), and every calculation that depends on one."""
@@ -155,7 +173,7 @@ def clean_datasource(ds, R, dsname, aliases=None):
                      "datasource-dependencies", "drill-paths"):
             ds.remove(c)
     # rename other fields whose display name clashes with ours
-    taken = {f.caption or f.name for f in mine.values()}
+    taken = {f.label or f.caption or f.name for f in mine.values()}
     for c in ds.findall("column"):
         n = c.get("name", "").strip("[]")
         if n not in mine and display_name(c) in taken:
@@ -604,6 +622,7 @@ def main(src, out):
         if any(n.startswith("V | ") for n in gone):
             NOTES["Pavilion"] = "Pavilion slabs, qualification and app acceptance (as published)."
 
+    avoid_name_clashes(R, {DS: retail, PDS: pav})
     clean_datasource(retail, R, DS, aliases={f"usr:{R[k].name}:qk": v for k, v in NP_ALIASES.items()})
     retail.insert(list(retail).index(retail.find("layout")) + 1, X(style_xml(R)))
     clean_datasource(pav, R, PDS, aliases=PAV_ALIASES)

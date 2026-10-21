@@ -70,6 +70,11 @@ def main(path):
             if m.findtext("local-name"):
                 meta[m.findtext("local-name")] = m.findtext("parent-name")
         info[ds.get("name")] = (cols, calcs, ext, conn, meta)
+        physical = {n.strip("[]") for n in meta}
+        for n, c in calcs.items():
+            if c.get("caption") in physical:
+                errs.append(f"{ds.get('name')[:12]}: calculation caption '{c.get('caption')}' is also a column name "
+                            "(Tableau confuses them when it reloads the data source)")
 
     def is_agg(calcs, n, seen=()):
         f = calcs[n].find("calculation").get("formula")

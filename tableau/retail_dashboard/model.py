@@ -165,7 +165,8 @@ def build_model(branches, branch_zone, families, rls_rules):
        "Partner type", "Tier", "Month", "Quarter", "Partner status"])
     P("p Dim", "Explore by", "string", "Branch",
       ["Region", "Branch", "ASM", "Partner", "Family", "Product classification", "Activity (Helios)",
-       "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter", "New product category", "Partner status"])
+       "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter", "New product category", "Partner status",
+       "Material code"])
 
     C = R.calc
     PU, PM, GV, NV = "[Parameters].[p Units]", "[Parameters].[p Measure]", "Gross", "Net"
@@ -355,7 +356,9 @@ def build_model(branches, branch_zone, families, rls_rules):
                 "WHEN 'Partner type' THEN IFNULL([RD/KRO], 'Unmapped') WHEN 'SSP / SSA' THEN IFNULL([SSA], 'Unmapped') "
                 "WHEN 'City' THEN IFNULL([City (Geography mapping)], 'Unmapped') WHEN 'Month' THEN {{Month}} "
                 "WHEN 'Quarter' THEN {{Quarter}} WHEN 'New product category' THEN {{New product category}} "
-                "WHEN 'Partner status' THEN {{Partner status}} ELSE 'All' END")
+                "WHEN 'Partner status' THEN {{Partner status}} "
+                "WHEN 'Material code' THEN IFNULL([MaterialCode], 'Unmapped') + '  ' + IFNULL([MaterialDescription], '') "
+                "ELSE 'All' END")
     C("Explore by", explore("p Dim"), "string")
     C("Explore across", explore("p Dim2"), "string")
     # value or quantity, as picked in 'Show' (Products and Explore pages)

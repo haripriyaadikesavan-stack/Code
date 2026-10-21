@@ -605,9 +605,9 @@ def build_sheets(R):
     # ---- Explore
     s = add(table(R, "X | Explore table", "Explore", ["Explore by"],
                   G + ["Share of sales %", "Quantity", "Quantity PY", "Quantity growth %", "OB", "Backlog", "Active partners"],
-                  sort_by="Sales", widths=[260]), "P", "P")
+                  sort_by="Sales", widths=[360]), "P", "P")
     s.title = title_runs("Explore by <[Parameters].[p Dim]>")
-    s = add(matrix(R, "X | Explore matrix", "Explore", ["Explore by"], "Explore across", "Shown", widths=[220], fit=None), "P", "P")
+    s = add(matrix(R, "X | Explore matrix", "Explore", ["Explore by"], "Explore across", "Shown", widths=[320], fit=None), "P", "P")
     s.title = title_runs("<[Parameters].[p Dim]> x <[Parameters].[p Dim2]> - <[Parameters].[p Show]>",
                          "Pick 'Explore by', 'Explore across' and 'Show' (value in the chosen units, or quantity in units sold)", param_units=False)
     add(hbar(R, "X | Explore bars", "Top 30 by sales", "Explore by", "Sales", "Colour = growth", scale=("Growth %", GROWTH_SCALE),

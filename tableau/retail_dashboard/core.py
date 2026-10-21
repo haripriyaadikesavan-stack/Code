@@ -36,6 +36,8 @@ NP_ALIASES = {
     "Policy new sales PY": "Sales PY ", "Policy new growth %": "Growth % ", "Policy new share %": "Share of all sales %",
     "Policy new assigned target": "Assigned target (25 L each)", "Policy new Ach %": "Ach % vs assigned target",
     "Policy new count Ach %": "Count Ach %", "Policy new target Ach %": "Sales Ach % ", "Policy new sales per partner": "Sales per buying partner",
+    # value / quantity crosstabs (Products, Explore)
+    "Shown": "This year", "Shown PY": "Last year", "Shown growth %": "Growth %  ",
 }
 
 

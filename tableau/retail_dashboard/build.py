@@ -521,7 +521,7 @@ def phone_layout(S, dash, rows, ids, head_xml, nav_names, controls, last_id):
 def fit_columns(s, w):
     """Tables with measures across: size the measure columns so the table fills its box (no squeezed #### columns,
     no empty space on the right). Wide tables keep a 60 px minimum and scroll sideways."""
-    if s.kind != "table" or not s.cols or not s.cols.endswith("[:Measure Names]"):
+    if s.kind != "table" or not s.cols or not s.cols.endswith("[:Measure Names]") or getattr(s, "no_fit", False):
         return
     dims = sum(wd for ref, wd in s.widths if not ref.endswith("[:Measure Names]"))
     n = getattr(s, "n_measures", 0)

@@ -227,6 +227,33 @@ def matrix(R, name, title, rowdims, coldim, measure, sub=None, nonnull="Has sale
     return s
 
 
+def cross(R, name, title, rowdims, coldim, measures, sub=None, nonnull="Has sales (agg)", widths=None, col_width=70):
+    """Row dimensions down, a dimension across with the measures (e.g. this year, last year, growth) under each value."""
+    s = Sheet(R, name, title_runs(title, sub, param_units=False), "table")
+    rrefs = [s.use(F(R, d), "dim") for d in rowdims]
+    c = s.use(F(R, coldim), "dim")
+    s.measures(measures)
+    s.rows = " / ".join(rrefs)
+    s.cols = f"{c} / {s.mn}"
+    s.rows_total = True
+    s.cols_total = True
+    s.encodings.append(("text", s.mv))
+    colour_columns(R, s, measures)
+    if nonnull:
+        s.nonnull(nonnull)
+    s.exclude_null(c, F(R, coldim))
+    for i, w in enumerate(widths or []):
+        s.widths.append((rrefs[i], w))
+    s.widths.append((s.mn, col_width))
+    s.no_fit = True             # many columns: keep the set width and scroll sideways
+    s.cell_align = "right"
+    s.fit = None
+    s.est_rows = est_rows(rowdims)
+    if s.est_rows is not None:
+        s.est_rows += 1
+    return s
+
+
 def pivot(R, name, title, rowdims, coldim, measures, sub=None, nonnull="Has sales (agg)", widths=None):
     """Row dimensions and measures down the side, a dimension (e.g. month) across."""
     s = Sheet(R, name, title_runs(title, sub, param_units=True), "table")
@@ -371,8 +398,9 @@ def build_sheets(R):
               G + ["Share of sales %"], widths=[120], nonnull="Has sales (agg)", col_width=72, fit=None))
     add(hbar(R, "P | Classification", "Sales by product classification", "Classification (Sheet1)", "Sales",
              "Colour = growth", scale=("Growth %", GROWTH_SCALE), exclude_null=True))
-    s = add(matrix(R, "P | Branch x family", "Branch x family", ["Region", "Branch"], "Family", "Shown", widths=[60, 100], fit=None))
-    s.title = title_runs("Branch x family - <[Parameters].[p Show]>",
+    s = add(cross(R, "P | Branch x family", "Branch x family", ["Region", "Branch"], "Family", ["Shown", "Shown PY", "Shown growth %"],
+                  widths=[60, 100]))
+    s.title = title_runs("Branch x family - <[Parameters].[p Show]>, this year vs last year",
                          "Value in the chosen units, or quantity (units sold); pick in 'Show'", param_units=False)
     add(table(R, "P | Top SKUs", "Top 25 materials", ["MaterialDescription"],
               G + ["Share of sales %", "Quantity"], sort_by="Sales",
@@ -607,8 +635,9 @@ def build_sheets(R):
                   G + ["Share of sales %", "Quantity", "Quantity PY", "Quantity growth %", "OB", "Backlog", "Active partners"],
                   sort_by="Sales", widths=[360]), "P", "P")
     s.title = title_runs("Explore by <[Parameters].[p Dim]>")
-    s = add(matrix(R, "X | Explore matrix", "Explore", ["Explore by"], "Explore across", "Shown", widths=[320], fit=None), "P", "P")
-    s.title = title_runs("<[Parameters].[p Dim]> x <[Parameters].[p Dim2]> - <[Parameters].[p Show]>",
+    s = add(cross(R, "X | Explore matrix", "Explore", ["Explore by"], "Explore across", ["Shown", "Shown PY", "Shown growth %"],
+                  widths=[320]), "P", "P")
+    s.title = title_runs("<[Parameters].[p Dim]> x <[Parameters].[p Dim2]> - <[Parameters].[p Show]>, this year vs last year",
                          "Pick 'Explore by', 'Explore across' and 'Show' (value in the chosen units, or quantity in units sold)", param_units=False)
     add(hbar(R, "X | Explore bars", "Top 30 by sales", "Explore by", "Sales", "Colour = growth", scale=("Growth %", GROWTH_SCALE),
              top=(30, "Sales CY (row)")), "P", "P")

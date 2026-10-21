@@ -159,6 +159,10 @@ def build_model(branches, branch_zone, families, rls_rules):
     P("p Units", "Units", "string", "Mn", ["INR", "Lakh", "Mn", "Cr"])
     P("p Target view", "Select a View - QTOD/ATOD", "string", TARGET_VIEWS[0][1], [v for _, v in TARGET_VIEWS])
     P("p MTD view", "Select a view", "string", MTD_VIEWS[0][1], [v for _, v in MTD_VIEWS])
+    P("p Show", "Show", "string", "Value", ["Value", "Quantity"])
+    P("p Dim2", "Explore across", "string", "None",
+      ["None", "Family", "Activity (Helios)", "Product classification", "New product category", "Region", "Branch",
+       "Partner type", "Tier", "Month", "Quarter", "Partner status"])
     P("p Dim", "Explore by", "string", "Branch",
       ["Region", "Branch", "ASM", "Partner", "Family", "Product classification", "Activity (Helios)",
        "Tier", "Partner type", "SSP / SSA", "City", "Month", "Quarter", "New product category", "Partner status"])
@@ -342,16 +346,21 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("Zeta sales PY (row)", "IF {{Is sale in PY period}} AND [Family Actual (Sheet1)] = 'Miluz Zeta' THEN {{Value}} END", fmt=FMT_V)
     C("Decline (row)", "ZN({{Sales PY (row)}}) - ZN({{Sales CY (row)}})", fmt=FMT_V)
     C("Partner status", "IF {{Partner new CY}} THEN 'New / Revival' ELSE 'Existing' END", "string")
-    C("Explore by",
-      "CASE [Parameters].[p Dim] "
-      "WHEN 'Region' THEN {{Region}} WHEN 'Branch' THEN {{Branch}} "
-      "WHEN 'ASM' THEN IFNULL([ASM], 'Unmapped') WHEN 'Partner' THEN {{Partner}} "
-      "WHEN 'Family' THEN {{Family}} WHEN 'Product classification' THEN IFNULL([Classification (Sheet1)], 'Unmapped') "
-      "WHEN 'Activity (Helios)' THEN IFNULL([Helios Code], 'Unmapped') WHEN 'Tier' THEN IFNULL([Tier Category], 'Unmapped') "
-      "WHEN 'Partner type' THEN IFNULL([RD/KRO], 'Unmapped') WHEN 'SSP / SSA' THEN IFNULL([SSA], 'Unmapped') "
-      "WHEN 'City' THEN IFNULL([City (Geography mapping)], 'Unmapped') WHEN 'Month' THEN {{Month}} "
-      "WHEN 'Quarter' THEN {{Quarter}} WHEN 'New product category' THEN {{New product category}} "
-      "WHEN 'Partner status' THEN {{Partner status}} END", "string")
+    def explore(param):
+        return ("CASE [Parameters].[" + param + "] "
+                "WHEN 'Region' THEN {{Region}} WHEN 'Branch' THEN {{Branch}} "
+                "WHEN 'ASM' THEN IFNULL([ASM], 'Unmapped') WHEN 'Partner' THEN {{Partner}} "
+                "WHEN 'Family' THEN {{Family}} WHEN 'Product classification' THEN IFNULL([Classification (Sheet1)], 'Unmapped') "
+                "WHEN 'Activity (Helios)' THEN IFNULL([Helios Code], 'Unmapped') WHEN 'Tier' THEN IFNULL([Tier Category], 'Unmapped') "
+                "WHEN 'Partner type' THEN IFNULL([RD/KRO], 'Unmapped') WHEN 'SSP / SSA' THEN IFNULL([SSA], 'Unmapped') "
+                "WHEN 'City' THEN IFNULL([City (Geography mapping)], 'Unmapped') WHEN 'Month' THEN {{Month}} "
+                "WHEN 'Quarter' THEN {{Quarter}} WHEN 'New product category' THEN {{New product category}} "
+                "WHEN 'Partner status' THEN {{Partner status}} ELSE 'All' END")
+    C("Explore by", explore("p Dim"), "string")
+    C("Explore across", explore("p Dim2"), "string")
+    # value or quantity, as picked in 'Show' (Products and Explore pages)
+    C("Shown CY (row)", "IF [Parameters].[p Show] = 'Quantity' THEN FLOAT({{Qty CY (row)}}) ELSE {{Sales CY (row)}} END", fmt=FMT_V)
+    C("Shown PY (row)", "IF [Parameters].[p Show] = 'Quantity' THEN FLOAT({{Qty PY (row)}}) ELSE {{Sales PY (row)}} END", fmt=FMT_V)
     # TvA view: achievement matching the selected partner-target view
 
     # ================================================================ monthly targets (table T, net)
@@ -472,6 +481,9 @@ def build_model(branches, branch_zone, families, rls_rules):
     A("New partner sales", "SUM(IF {{Partner status}} = 'New / Revival' THEN {{Sales CY (row)}} END)")
     A("Sales per partner", "IF COUNTD({{Active partner CY (row)}}) > 0 THEN SUM({{Sales CY (row)}}) / COUNTD({{Active partner CY (row)}}) END")
     A("Quantity", "SUM({{Qty CY (row)}})", "integer", FMT_N)
+    A("Shown", "SUM({{Shown CY (row)}})", fmt=FMT_V)
+    A("Shown PY", "SUM({{Shown PY (row)}})", fmt=FMT_V)
+    growth("Shown growth %", "{{Shown CY (row)}}", "{{Shown PY (row)}}")
     A("Quantity PY", "SUM({{Qty PY (row)}})", "integer", FMT_N)
     growth("Quantity growth %", "{{Qty CY (row)}}", "{{Qty PY (row)}}")
     A("Wiser sales", "SUM({{Wiser sales CY (row)}})")

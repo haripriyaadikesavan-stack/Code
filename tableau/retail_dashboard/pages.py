@@ -371,6 +371,9 @@ def build_sheets(R):
               G + ["Share of sales %"], widths=[120], nonnull="Has sales (agg)", col_width=72, fit=None))
     add(hbar(R, "P | Classification", "Sales by product classification", "Classification (Sheet1)", "Sales",
              "Colour = growth", scale=("Growth %", GROWTH_SCALE), exclude_null=True))
+    s = add(matrix(R, "P | Branch x family", "Branch x family", ["Region", "Branch"], "Family", "Shown", widths=[60, 100], fit=None))
+    s.title = title_runs("Branch x family - <[Parameters].[p Show]>",
+                         "Value in the chosen units, or quantity (units sold); pick in 'Show'", param_units=False)
     add(table(R, "P | Top SKUs", "Top 25 materials", ["MaterialDescription"],
               G + ["Share of sales %", "Quantity"], sort_by="Sales",
               top=(25, "Sales CY (row)"), widths=[320], nonnull="Has sales (agg)", total=False))
@@ -601,8 +604,12 @@ def build_sheets(R):
 
     # ---- Explore
     s = add(table(R, "X | Explore table", "Explore", ["Explore by"],
-                  G + ["Share of sales %", "OB", "Backlog", "Active partners", "Quantity"], sort_by="Sales", widths=[300]), "P", "P")
+                  G + ["Share of sales %", "Quantity", "Quantity PY", "Quantity growth %", "OB", "Backlog", "Active partners"],
+                  sort_by="Sales", widths=[260]), "P", "P")
     s.title = title_runs("Explore by <[Parameters].[p Dim]>")
+    s = add(matrix(R, "X | Explore matrix", "Explore", ["Explore by"], "Explore across", "Shown", widths=[220], fit=None), "P", "P")
+    s.title = title_runs("<[Parameters].[p Dim]> x <[Parameters].[p Dim2]> - <[Parameters].[p Show]>",
+                         "Pick 'Explore by', 'Explore across' and 'Show' (value in the chosen units, or quantity in units sold)", param_units=False)
     add(hbar(R, "X | Explore bars", "Top 30 by sales", "Explore by", "Sales", "Colour = growth", scale=("Growth %", GROWTH_SCALE),
              top=(30, "Sales CY (row)")), "P", "P")
 
@@ -655,7 +662,9 @@ def params_for(dash):
     if dash == "Partner Targets":
         return PERIOD + VALUE + [("p Target view", "compact")]
     if dash == "Explore":
-        return PERIOD + VALUE + [("p Dim", "compact")]
+        return PERIOD + VALUE + [("p Dim", "compact"), ("p Dim2", "compact"), ("p Show", "compact")]
+    if dash == "Products":
+        return PERIOD + VALUE + [("p Show", "compact")]
     return PERIOD + VALUE
 
 
@@ -689,7 +698,8 @@ LAYOUT = {
     "Branches": [H("Branches"), (600, [("B | Scorecard", 1)]), (440, [("B | Focus families", 1)]), (520, [("B | ASM table", 1)])],
     "Products": [H("Products"), K("K | Sales", "K | Wiser", "K | Zeta", "K | Quantity"), (440, [("P | Family table", 1)]),
                  (420, [("P | Family bars", 1), ("P | Classification", 1)]),
-                 (260, [("P | Activity", 1), ("P | New products", 1)]), (540, [("P | Top SKUs", 1)])],
+                 (260, [("P | Activity", 1), ("P | New products", 1)]), (700, [("P | Branch x family", 1)]),
+                 (540, [("P | Top SKUs", 1)])],
     "Partners": [H("Partners"), K("K | Partners", "K | New partners", "K | Lapsed", "K | Per partner"),
                  (280, [("Pa | Ach bands", 1), ("Pa | Slabs", 1), ("Pa | Tier", 1)]),
                  (280, [("Pa | New partners", 2), ("Pa | Onboarded", 1)]),
@@ -718,5 +728,5 @@ LAYOUT = {
     "Order Book": [H("Order Book"), K("K | Order book", "K | Sales to OB", "K | Backlog", "K | Data"),
                    (320, [("O | OB trend", 2), ("O | Backlog ageing", 1)]), (520, [("O | OB by branch", 1)]),
                    (340, [("O | Backlog partners", 1)]), (600, [("O | Open orders", 1)])],
-    "Explore": [(700, [("X | Explore table", 1)]), (680, [("X | Explore bars", 1)])],
+    "Explore": [(700, [("X | Explore table", 1)]), (700, [("X | Explore matrix", 1)]), (680, [("X | Explore bars", 1)])],
 }

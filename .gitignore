@@ -7,3 +7,6 @@ __pycache__/
 *.twbx
 *.twb
 *.hyper
+
+# Hyper API logs
+hyperd*.log

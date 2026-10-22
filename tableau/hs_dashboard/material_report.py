@@ -42,7 +42,8 @@ def read_sales(twbx, start, end):
             if not hyper:
                 raise SystemExit("no HS extract (federated_14wc2mc1wc09dr1b4kqf30*.hyper) in " + twbx)
             path = z.extract(hyper[0], tmp)
-        with HyperProcess(telemetry=Telemetry.DO_NOT_SEND_USAGE_DATA_TO_TABLEAU) as hp, Connection(hp.endpoint, path) as c:
+        with HyperProcess(telemetry=Telemetry.DO_NOT_SEND_USAGE_DATA_TO_TABLEAU, parameters={"log_dir": tmp}) as hp, \
+                Connection(hp.endpoint, path) as c:
             table = [t for t in c.catalog.get_table_names("Extract") if t.name.unescaped.startswith("Year_")][0]
             cols = {str(x.name).strip('"') for x in c.catalog.get_table_definition(table).columns}
             fam = '"Family Actual"' if "Family Actual" in cols else "NULL"

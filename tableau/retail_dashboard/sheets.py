@@ -161,7 +161,9 @@ class Sheet:
         ref = self.use(f, "dim")
         lvl = "[" + inst(f, "dim")[0] + "]"
         ctx = " context='true'" if context else ""
-        self.filters.append(f"<filter class='categorical' column='{ref}'{ctx} filter-group='{group}'><groupfilter function='level-members' level='{lvl}' "
+        # Tableau reserves the low filter-group ids (its own workbooks start at 3; groups 1 and 2 were dropped on
+        # save, which unlinked Region and Branch), so shared filters use 100 + the group number
+        self.filters.append(f"<filter class='categorical' column='{ref}'{ctx} filter-group='{100 + group}'><groupfilter function='level-members' level='{lvl}' "
                             f"user:ui-enumeration='all' user:ui-marker='enumerate' /></filter>")
         self.slices.insert(0, ref)
         return ref

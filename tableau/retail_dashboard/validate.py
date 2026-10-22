@@ -49,6 +49,9 @@ def main(path):
     root = etree.parse(path).getroot()
     errs = []
     ranks = [next((i for i, t in enumerate(ORDER) if str(c.tag) == t or str(c.tag).endswith("..." + t)), 99) for c in root]
+    low = sorted({f.get("filter-group") for f in root.iter("filter") if f.get("filter-group") and int(f.get("filter-group")) < 3})
+    if low:
+        errs.append(f"filter-group id(s) {low} are reserved by Tableau (it unlinks them on save)")
     base = [str(c.tag).split("...")[-1] for c in root]
     dups = sorted({b for b in base if base.count(b) > 1})
     if dups:

@@ -35,3 +35,13 @@ The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored
 Overview · Regions · Branches · Activity & Commit · Retail vs Project · Products · Partners · All Partners · Monthly Targets · MTD · Order Book · Explore.
 
 Each page has the shared dropdown filters (Region, Branch, ASM, Partner, Sold To Party ID, Activity, Family, Partner type, Tier, Partner growth band), small tables sized to their rows, and a phone layout.
+
+## Material report (Python)
+
+`material_report.py` writes an Excel report from the HS extract: every material code with its activity code (e.g. PPCFD),
+activity, and sales and quantity split into Retail and Project with totals, plus a summary by activity.
+
+```
+python material_report.py "Home Solutions Dashboard.twbx" "HS material report.xlsx" [--start 2026-01-01] [--end 2026-10-22]
+       [--measure gross|net|net-source] [--units INR|Lakh|Mn|Cr] [--without-fd]
+```

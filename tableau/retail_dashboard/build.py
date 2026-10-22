@@ -12,7 +12,7 @@ import zipfile
 
 from lxml import etree
 
-from core import NP_ALIASES, C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, DS_CAPTION, PDS, X, attr, inst_xml, new_uuid, txt
+from core import NP_ALIASES, DS_CAPTIONS, C_BG, C_DARK, C_MID, C_MUTED, C_PY, C_TARGET, DS, DS_CAPTION, PDS, X, attr, inst_xml, new_uuid, txt
 
 SIDE_BG = "#e9f0ec"
 from model import build_model
@@ -427,16 +427,22 @@ def dashboard(R, S, dash):
     phone = phone_layout(S, dash, rows, ids, head_xml, nav_names, controls, L.n)
 
     # ---- dependencies: parameters on the panel, fields of the filters
-    pnames = sorted({p for p, _ in params})
-    deps = "<datasources><datasource name='Parameters' />" + (f"<datasource caption={attr(DS_CAPTION)} name='{DS}' />" if filter_deps else "") + "</datasources>"
+    # parameters: the panel's, plus every parameter the filter fields depend on (e.g. Policy category -> period);
+    # without them Tableau cannot list a filter's values on a page that has no period control (MTD)
+    fields = [R[f] if f in R.by_caption else R.fields[f] for f in filter_deps]
+    closure, fparams = R.closure({f.key for f in fields}) if fields else (set(), set())
+    pnames = sorted({p for p, _ in params} | fparams)
+    by_ds = {}
+    for k in closure:
+        by_ds.setdefault(R.fields[k].ds, []).append(R.fields[k])
+    deps = ("<datasources><datasource name='Parameters' />"
+            + "".join(f"<datasource caption={attr(DS_CAPTIONS[d])} name='{d}' />" for d in sorted(by_ds)) + "</datasources>")
     deps += ("<datasource-dependencies datasource='Parameters'>" + "".join(R.params[p].column_xml() for p in pnames)
              + "</datasource-dependencies>")
-    if filter_deps:
-        fields = [R[f] if f in R.by_caption else R.fields[f] for f in filter_deps]
-        closure, _ = R.closure({f.key for f in fields})
-        cols = sorted((R.fields[k] for k in closure), key=lambda f: f.name)
-        deps += (f"<datasource-dependencies datasource='{DS}'>" + "".join(f.column_xml() for f in cols)
-                 + "".join(inst_xml(f, "dim") for f in fields) + "</datasource-dependencies>")
+    for d in sorted(by_ds):
+        cols = sorted(by_ds[d], key=lambda f: f.name)
+        deps += (f"<datasource-dependencies datasource='{d}'>" + "".join(f.column_xml() for f in cols)
+                 + "".join(inst_xml(f, "dim") for f in fields if f.ds == d) + "</datasource-dependencies>")
     style = (f"<style><style-rule element='table'><format attr='background-color' value='{C_BG}' /></style-rule>"
              "<style-rule element='parameter-ctrl'><format attr='font-size' value='9' /><format attr='color' value='#333333' />"
              "<format attr='border-color' value='#d9d9d9' /><format attr='border-width' value='1' /><format attr='border-style' value='solid' />"

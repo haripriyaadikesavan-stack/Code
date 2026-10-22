@@ -7,6 +7,7 @@ python build.py "Overall Retail Dashboard.twbx" "Retail Dashboard v14.twbx"
 python validate.py "Retail Dashboard v14.twb"        # references, tables, aggregation, filters, actions
 python order_check.py "Retail Dashboard v14.twb" "Overall Retail Dashboard.twb" "eCommerce_Analysis.twb"
 python wire.py "Retail Dashboard v14.twb" wireframes  # optional PNG wireframes (needs matplotlib)
+python audit.py "Retail Dashboard v14.twb"      # filters reach every sheet, sorts, top N, view switches, buttons
 ```
 
 Needs `lxml`. The source can be the original workbook or a later Retail Dashboard whose extract has had tables removed: sheets that need a removed table are left out (and listed when building). The `.twbx`, `.twb` and `.hyper` files contain business data and are git-ignored.

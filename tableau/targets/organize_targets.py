@@ -9,16 +9,16 @@ df_Sales_final. Run on its own (tests, one-off use):
 
 `sales` is one row per sale (or pre-aggregated) with the columns of SALES_COLUMNS.
 
-How a target is split (base year = target year - 1, gross sales):
-  * Month: months with a monthly target keep it. The rest of the yearly branch target (yearly - given months) is
-    spread over the missing months by the region's base-year monthly sales (a branch's own months are too uneven).
-    Where the given months already exceed the yearly target, the missing months get the given months' run-rate.
-  * Miluz Zeta and Wiser: the given monthly targets are kept; for months without one, the branch's Zeta / Wiser share
-    of its given months is applied.
-  * Product groups: what is left after Zeta and Wiser is split over the other product groups by the branch's
-    base-year sales mix. Activities (WD, FD, COS, SPE, EVC) are the sum of their product groups.
-  * Project: yearly targets per branch and activity, spread by month with the region's base-year Project sales, and
-    by product group within the activity.
+How targets are organised (base year = target year - 1, gross sales):
+  * Yearly and monthly targets are separate, as in the Retail file: 'Branch Targets' (yearly) and 'Monthly Targets'
+    (the monthly commit, which need not add up to the yearly target). Both are kept exactly as given; months that
+    have no target yet stay empty — nothing is derived from the yearly target.
+  * Product groups: each yearly or monthly target is split over product groups by the branch's base-year sales mix.
+    Monthly Miluz Zeta and Wiser targets are kept as given and only the rest is split. Activities (WD, FD, COS, SPE,
+    EVC) are the sum of their product groups.
+  * Project: yearly targets (HS 'Branch Targets', by activity) and monthly commits (HS 'Activity wise Month Target')
+    split over product groups within the activity. The HS file's Retail rows are replaced by the Retail file, so the
+    Retail and HS dashboards show the same Retail targets.
   * Partners: the quarter targets are kept; Zeta / Wiser partner targets go to quarters like the partner's total.
     'Partner Product Split' splits each partner's yearly target over product groups by its own base-year mix (the
     branch mix for partners with little or no base-year sales).
@@ -154,20 +154,36 @@ class Issues(list):
         self.append({"Source sheet": sheet, "Problem": what, "What was done": action, "Rows / values": str(rows)[:500]})
 
 
+def _mix_rows(total, mix, focus, keys, source_split):
+    """Rows of one target split over product groups: `focus` groups as given, the rest by `mix`."""
+    rest = total - sum(v for v, _ in focus.values())
+    others = mix.drop(list(focus), errors="ignore")
+    others = others / others.sum() if others.sum() > 0 else others
+    rows = []
+    for grp, act in GROUPS:
+        if grp in focus:
+            v, how = focus[grp]
+        else:
+            v, how = max(rest, 0.0) * others.get(grp, 0.0), source_split
+        if v:
+            rows.append((*keys, act, grp, v, "Net", how))
+    return rows, rest
+
+
 def retail_targets(master, sales, year, issues):
-    """Retail branch x month x product group targets (net) from 'Branch Targets' and 'Monthly Targets'."""
+    """Retail yearly targets ('Branch Targets') and monthly targets ('Monthly Targets' = the monthly commit), each as
+    given and split over product groups by the branch's base-year mix. The two are independent: months are never
+    derived from the yearly target and need not add up to it."""
     base = sales[(sales["Year"] == year - 1) & (sales["GTM"] == "Retail")]
-    month_sh = shares(base, ["Region"], "Month")      # region pattern: steadier than one branch's months
-    month_all = base.groupby("Month")["Gross"].sum() / base["Gross"].sum()
     grp_sh = shares(base, ["Branch"], "Group")
     reg_sh = shares(base, ["Region"], "Group")
     grp_all = base.groupby("Group")["Gross"].sum() / base["Gross"].sum()
+    names = [g for g, _ in GROUPS]
 
-    base_region = base.groupby("Branch")["Region"].agg(lambda s: s.mode().iloc[0] if len(s.mode()) else None).to_dict()
     bt = master["Branch Targets"].copy()
     bt["Branch"] = bt["Branch"].map(canon_branch)
     region = dict(zip(bt["Branch"], bt["Zone"]))
-    yearly = bt[bt["Year"] == year].groupby("Branch")["Target"].sum(min_count=1)
+    yearly = bt[bt["Year"] == year].groupby("Branch")["Target"].sum(min_count=1).dropna()
     if bt.loc[bt["Year"] == year - 1, "Target"].isna().all() and (bt["Year"] == year - 1).any():
         issues.add("Branch Targets", f"{year - 1} rows have no target", "ignored")
 
@@ -187,130 +203,127 @@ def retail_targets(master, sales, year, issues):
     for c in ("Target", "Miluz Zeta", "Wiser"):
         mt[c] = num(mt[c])
     mt["m"] = mt["Month"].dt.month
-    given = mt.groupby(["Branch", "m"])[["Target", "Miluz Zeta", "Wiser"]].sum(min_count=1)
-    have = sorted(mt["m"].unique())
+    monthly = mt.groupby(["Branch", "m"])[["Target", "Miluz Zeta", "Wiser"]].sum(min_count=1).dropna(subset=["Target"])
+    have = sorted(monthly.index.get_level_values(1).unique())
     if len(have) < 12:
-        issues.add("Monthly Targets", f"monthly targets only for {', '.join(dt.date(year, m, 1).strftime('%b') for m in have)}",
-                   "other months = rest of the yearly branch target, spread by last year's monthly sales")
+        missing = [dt.date(year, m, 1).strftime("%b") for m in range(1, 13) if m not in have]
+        issues.add("Monthly Targets", f"no monthly targets yet for {', '.join(missing)}",
+                   "left empty (monthly targets are never derived from the yearly target) — add them when set")
     for c in ("Miluz Zeta", "Wiser"):
         blank = mt[mt["Target"].notna() & mt[c].isna()]
         if len(blank):
             issues.add("Monthly Targets", f"blank {c} target", "taken as 0",
                        ", ".join(f"{b} {d:%b}" for b, d in zip(blank["Branch"], blank["Month"])))
+    for b in sorted(set(monthly.index.get_level_values(0)) - set(region)):
+        issues.add("Monthly Targets", f"branch {b} is not in 'Branch Targets'", "region left blank")
 
-    rows = []
-    branches = sorted(set(yearly.index) | set(given.index.get_level_values(0)))
-    for b in branches:
-        reg = region.get(b)
-        if reg is None:
-            issues.add("Monthly Targets", f"branch {b} is not in 'Branch Targets'", "region left blank")
-        g = given.loc[b] if b in given.index.get_level_values(0) else pd.DataFrame(columns=given.columns)
-        tm = g["Target"].dropna()
-        ph = lookup_share(month_sh, base_region.get(b), range(1, 13), month_all)
-        y = yearly.get(b, np.nan)
-        missing = [m for m in range(1, 13) if m not in tm.index]
-        month_t, src = {m: float(v) for m, v in tm.items()}, {m: "Given" for m in tm.index}
-        if missing:
-            p = ph.reindex(missing).fillna(0.0)
-            done = ph.reindex(tm.index).sum()
-            run_rate = tm.sum() / done * p.sum() if done > 0 else 0.0
-            if pd.notna(y) and y - tm.sum() > 0:
-                rest = y - tm.sum()
-                how = "Yearly - given months, by last year's monthly sales (region)"
-            else:
-                rest = run_rate
-                how = "Run-rate of the given months, by last year's monthly sales (region)"
-                if pd.notna(y):
-                    issues.add("Branch Targets", f"{b}: the given months already add up to more than the yearly target",
-                               "missing months at the given months' run-rate (yearly target is exceeded — update it)",
-                               f"yearly {y:,.0f} vs given months {tm.sum():,.0f}")
-                else:
-                    issues.add("Branch Targets", f"{b}: no yearly target for {year}", "missing months from the given months' run-rate")
-            p = p / p.sum() if p.sum() > 0 else pd.Series(1 / len(missing), index=missing)
-            for m in missing:
-                month_t[m], src[m] = rest * p[m], how
-        elif pd.notna(y) and abs(tm.sum() - y) > 1:
-            issues.add("Branch Targets", f"{b}: 12 months add up to {tm.sum():,.0f}, yearly target is {y:,.0f}",
-                       "monthly targets kept")
-        # focus families: given, else the branch's share of its given months
-        tot_given = g["Target"].sum()
-        mix = lookup_share(grp_sh, b, [x for x, _ in GROUPS], lookup_share(reg_sh, reg, [x for x, _ in GROUPS], grp_all))
-        for m in range(1, 13):
-            t = month_t[m]
-            focus = {}
-            for col, grp in FOCUS.items():
-                if m in g.index and pd.notna(g.loc[m, "Target"]):
-                    focus[grp] = (float(g.loc[m, col]) if pd.notna(g.loc[m, col]) else 0.0, "Given")
-                else:
-                    share = g[col].sum() / tot_given if tot_given > 0 else mix[grp]
-                    focus[grp] = (t * share, "Share of the given months")
-            rest = t - sum(v for v, _ in focus.values())
-            if rest < 0:
-                issues.add("Monthly Targets", f"{b} {dt.date(year, m, 1):%b}: Zeta + Wiser above the branch target",
-                           "other product groups 0")
-                rest = 0.0
-            others = mix.drop(list(focus))
-            if others.sum() <= 0:
-                others = grp_all.drop(list(focus), errors="ignore")
-            others = others / others.sum()
-            for grp, _ in GROUPS:
-                if grp in focus:
-                    v, how = focus[grp]
-                else:
-                    v = rest * others.get(grp, 0.0)
-                    how = "Split by last year's product mix" + ("" if src[m] == "Given" else " (month derived)")
-                rows.append((year, dt.date(year, m, 1), reg, b, "Retail", GROUP_ACTIVITY[grp], grp, v, "Net", how))
-    cols = ["Year", "Month", "Region", "Branch", "GTM", "Activity", "Product group", "Target", "Basis", "Source"]
-    fam = pd.DataFrame(rows, columns=cols)
-    month_src = fam.groupby(["Branch", "Month"])["Source"].agg(lambda s: "Given" if (s == "Given").any() else s.iloc[0])
-    return fam, yearly, region, month_src
+    def mix_of(b):
+        return lookup_share(grp_sh, b, names, lookup_share(reg_sh, region.get(b), names, grp_all))
+
+    split = "Split by last year's product mix"
+    y_rows, m_rows = [], []
+    for b, y in yearly.items():
+        rows, _ = _mix_rows(y, mix_of(b), {}, (year, region.get(b), b, "Retail"), "Yearly as given; " + split.lower())
+        y_rows += rows
+    for (b, m), r in monthly.iterrows():
+        focus = {grp: (float(r[col]) if pd.notna(r[col]) else 0.0, "Given") for col, grp in FOCUS.items()}
+        rows, rest = _mix_rows(r["Target"], mix_of(b), focus, (year, dt.date(year, m, 1), region.get(b), b, "Retail"),
+                               "Given month; " + split.lower())
+        if rest < 0:
+            issues.add("Monthly Targets", f"{b} {dt.date(year, m, 1):%b}: Zeta + Wiser above the branch target",
+                       "other product groups 0")
+        m_rows += rows
+    tm = monthly["Target"].groupby(level=0).sum()
+    over = [(b, tm[b], yearly[b]) for b in tm.index if b in yearly and tm[b] > yearly[b]]
+    if over:
+        issues.add("Monthly Targets", "monthly targets already add up to more than the yearly target",
+                   "both kept as given (they are separate targets) — just for information",
+                   "; ".join(f"{b}: months {t / 1e7:,.2f} Cr vs yearly {y / 1e7:,.2f} Cr" for b, t, y in over))
+    ycols = ["Year", "Region", "Branch", "GTM", "Activity", "Product group", "Target", "Basis", "Source"]
+    mcols = ["Year", "Month", "Region", "Branch", "GTM", "Activity", "Product group", "Target", "Basis", "Source"]
+    return pd.DataFrame(y_rows, columns=ycols), pd.DataFrame(m_rows, columns=mcols), yearly, tm, region
+
+
+def _project_mix(base, b, act):
+    sub = base[base["Activity"] == act]
+    grp = sub.groupby(["Branch", "Group"])["Gross"].sum()
+    mix = grp.loc[b] if b in grp.index.get_level_values(0) and grp.loc[b].sum() > 0 else sub.groupby("Group")["Gross"].sum()
+    if mix.sum() <= 0:
+        mix = pd.Series({[g for g, a in GROUPS if a == act][-1]: 1.0})
+    return mix / mix.sum()
 
 
 def project_targets(hs, sales, year, issues):
-    """Project branch x month x product group targets from the HS file's 'Branch Targets' (yearly, by activity)."""
+    """Project yearly targets from the HS file's 'Branch Targets' (by activity), split over product groups."""
     if hs is None or "Branch Targets" not in hs:
         return pd.DataFrame()
     bt = hs["Branch Targets"].copy()
-    bt = bt[(bt["Year"] == year) & (bt["Category"] == "Project")]
-    retail_rows = hs["Branch Targets"]
-    rr = retail_rows[(retail_rows["Year"] == year) & (retail_rows["Category"] == "Retail")]
+    rr = bt[(bt["Year"] == year) & (bt["Category"] == "Retail")]
     if len(rr) and rr["Target"].nunique() == 1:
         issues.add("HS Branch Targets", f"every Retail branch has the same {year} target ({rr['Target'].iloc[0]:,.0f})",
                    "replaced by the Retail 'Branch Targets' (Retail and HS now share one Retail target)")
+    bt = bt[(bt["Year"] == year) & (bt["Category"] == "Project")]
     dup = bt[bt.duplicated(["Branch", "Helios Code"], keep=False)]
     if len(dup):
         issues.add("HS Branch Targets", "two rows for the same branch and Helios code (HDCOS twice per branch)",
                    "added together as COS", f"{dup['Branch'].nunique()} branches")
     bt["Activity"] = bt["Helios Code"].map(ACTIVITY)
-    yearly = bt.groupby(["Branch", "Activity"])["Target"].sum()
     base = sales[(sales["Year"] == year - 1) & (sales["GTM"] == "Project")]
-    month_sh = shares(base, ["Region"], "Month")
-    month_all = base.groupby("Month")["Gross"].sum() / base["Gross"].sum()
     region = base.groupby("Branch")["Region"].agg(lambda s: s.mode().iloc[0] if len(s.mode()) else None).to_dict()
     rows = []
-    for (b, act), y in yearly.items():
-        ph = lookup_share(month_sh, region.get(b), range(1, 13), month_all)
-        ph = ph / ph.sum() if ph.sum() > 0 else pd.Series(1 / 12, index=range(1, 13))
-        sub = base[base["Activity"] == act]
-        grp = sub.groupby(["Branch", "Group"])["Gross"].sum()
-        gall = sub.groupby("Group")["Gross"].sum()
-        mix = grp.loc[b] if b in grp.index.get_level_values(0) and grp.loc[b].sum() > 0 else gall
-        if mix.sum() <= 0:
-            mix = pd.Series({g: 1.0 for g, a in GROUPS if a == act}).iloc[-1:]
-        mix = mix / mix.sum()
-        for m in range(1, 13):
-            for g, sh in mix.items():
-                rows.append((year, dt.date(year, m, 1), region.get(b), b, "Project", act, g, y * ph[m] * sh, "Net",
-                             "Yearly by activity, split by last year's Project sales (region months, branch products)"))
+    for (b, act), y in bt.groupby(["Branch", "Activity"])["Target"].sum().items():
+        for g, sh in _project_mix(base, b, act).items():
+            rows.append((year, region.get(b), b, "Project", act, g, y * sh, "Net",
+                         "Yearly by activity as given; split by last year's Project product mix"))
     if (~bt["Branch"].isin(region)).any():
         issues.add("HS Branch Targets", "Project branches with no Project sales last year",
-                   "spread with the all-Project monthly pattern; region left blank",
-                   ", ".join(sorted(set(bt["Branch"]) - set(region))))
+                   "product split by all Project sales; region left blank", ", ".join(sorted(set(bt["Branch"]) - set(region))))
+    return pd.DataFrame(rows, columns=["Year", "Region", "Branch", "GTM", "Activity", "Product group", "Target", "Basis",
+                                       "Source"])
+
+
+def project_monthly(com, sales, year, issues, yearly_p=None):
+    """Project monthly targets = the HS file's Project commits by activity, split over product groups.
+    The HS file's Retail commits are not used: Retail monthly targets come from the Retail 'Monthly Targets' sheet,
+    so the Retail and HS dashboards show the same Retail numbers."""
+    if com is None or com.empty:
+        return pd.DataFrame()
+    if (com["GTM"] == "Retail").any():
+        issues.add("Activity wise Month Target", "Retail commits in the HS file differ from the Retail 'Monthly Targets'",
+                   "not used — Retail monthly targets come from the Retail file for both dashboards",
+                   f"{(com['GTM'] == 'Retail').sum()} rows")
+    p = com[(com["GTM"] == "Project") & com["Activity"].notna()]
+    fd = p[p["Activity"] == "FD"]
+    if len(fd):
+        issues.add("Activity wise Month Target", "Project FD commits (FD is always Retail; values up to 124 Cr a month)",
+                   "not used", f"{len(fd)} rows")
+    p = p[p["Activity"] != "FD"]
+    if yearly_p is not None and len(yearly_p):
+        # a month whose commit equals the whole yearly target is the yearly figure pasted in, not a monthly commit
+        y = yearly_p.groupby(["Branch", "Activity"])["Target"].sum()
+        tot = p.groupby(["Branch", "Month", "Activity"])["Commit"].transform("sum")
+        yv = pd.Series([y.get((b, a), np.nan) for b, a in zip(p["Branch"], p["Activity"])], index=p.index)
+        pasted = (yv > 0) & ((tot - yv).abs() <= 0.001 * yv)
+        if pasted.any():
+            months = sorted(p.loc[pasted, "Month"].dt.strftime("%b").unique())
+            issues.add("Activity wise Month Target", f"Project commits for {', '.join(months)} equal the whole yearly target",
+                       "not used (the yearly figure pasted in as a month)", f"{p.loc[pasted, 'Branch'].nunique()} branches")
+            p = p[~pasted]
+    if (com["Commit"].round(0) != com["OB Commit"].round(0)).mean() < 0.01:
+        issues.add("Activity wise Month Target", "'OB Commit' is the same as 'Commit' on almost every row",
+                   "only 'Commit' kept (as the monthly target)")
+    base = sales[(sales["Year"] == year - 1) & (sales["GTM"] == "Project")]
+    rows = []
+    for (b, m, reg, act), v in p.groupby(["Branch", "Month", "Region", "Activity"], dropna=False)["Commit"].sum().items():
+        for g, sh in _project_mix(base, b, act).items():
+            rows.append((year, pd.Timestamp(m).date(), reg, b, "Project", act, g, v * sh, "Net",
+                         "Given commit by activity; split by last year's Project product mix"))
     return pd.DataFrame(rows, columns=["Year", "Month", "Region", "Branch", "GTM", "Activity", "Product group", "Target",
                                        "Basis", "Source"])
 
 
 def commits(hs, year, issues):
+    """The HS file's 'Activity wise Month Target' rows for the year (Commit by branch, month, GTM and activity)."""
     if hs is None or "Activity wise Month Target" not in hs:
         return pd.DataFrame()
     c = hs["Activity wise Month Target"].copy()
@@ -319,26 +332,14 @@ def commits(hs, year, issues):
     for k in ("Commit", "OB Commit"):
         c[k] = num(c[k])
     c["Activity"] = c["Helios Code"].map(ACTIVITY)
-    wd = c[c["Helios Code"] == "HDCWD"].set_index(["Branch", "Month", "Category"])["Commit"]
-    fd = c[c["Helios Code"] == "PPCFD"].set_index(["Branch", "Month", "Category"])["Commit"]
-    same = fd[fd.index.isin(wd.index)]
-    same = same[(same.values == wd.reindex(same.index).values) & (same.values > 0)]
-    if len(same):
-        issues.add("Activity wise Month Target", "PPCFD (FD) commit equals the HDCWD (WD) commit on the same row",
-                   "kept as given — check the FD commits", f"{len(same)} rows")
-    big = c[(c["Activity"] == "FD") & (c["Category"] == "Project") & (c["Commit"] > 1e8)]
-    if len(big):
-        issues.add("Activity wise Month Target", "Project FD commits above 10 Cr a month (e.g. Del/NCR 124 Cr)",
-                   "kept as given; the HS dashboard leaves Project FD commits out",
-                   ", ".join(f"{b} {m:%b}" for b, m in zip(big["Branch"], big["Month"]))[:300])
-    months = sorted(c["Month"].dt.month.unique())
+    months = sorted(c.loc[c["Category"] == "Project", "Month"].dt.month.unique())
     if months and len(months) < 12:
-        issues.add("Activity wise Month Target", f"commits only for {len(months)} months", "kept as given")
+        issues.add("Activity wise Month Target", f"Project commits only for {len(months)} months "
+                   f"({', '.join(dt.date(year, m, 1).strftime('%b') for m in months)})", "other months left empty")
     out = c.rename(columns={"Zone": "Region", "Category": "GTM"})
-    out["Year"], out["Basis"] = year, "Net"
     retail = out["GTM"] == "Retail"
     out.loc[retail, "Branch"] = out.loc[retail, "Branch"].map(canon_branch)
-    return out[["Year", "Month", "Region", "Branch", "GTM", "Activity", "Helios Code", "Commit", "OB Commit", "Basis"]]
+    return out[["Month", "Region", "Branch", "GTM", "Activity", "Commit", "OB Commit"]]
 
 
 def partner_targets(qtod, master, sales, year, partner_info, region, issues):
@@ -480,26 +481,12 @@ def organize(master, qtod, sales, year, hs=None, partner_info=None):
     issues = Issues()
     sales = prepare_sales(sales)
     partner_info = partner_info or {}
-    fam, yearly, region, month_src = retail_targets(master, sales, year, issues)
-    proj = project_targets(hs, sales, year, issues)
-    fam_all = pd.concat([fam, proj], ignore_index=True)
-    branch = (fam_all.groupby(["Year", "Month", "Region", "Branch", "GTM", "Activity", "Basis"], dropna=False, as_index=False)
-              .agg(Target=("Target", "sum"), Source=("Source", lambda s: "Given" if (s == "Given").any() else s.iloc[0])))
-    branch["Source"] = np.where(branch["GTM"] == "Retail",
-                                [("Given month, " if month_src.get((b, m)) == "Given" else "Derived month, ") + "split by last year's product mix"
-                                 for b, m in zip(branch["Branch"], branch["Month"])], branch["Source"])
-    branch = branch[["Year", "Month", "Region", "Branch", "GTM", "Activity", "Target", "Basis", "Source"]]
-    pt, q = partner_targets(qtod, master, sales, year, partner_info, region, issues)
-    pps = partner_product_split(q, sales, year)
-    branches = (pd.concat([branch[["Branch", "Region", "GTM"]]]).drop_duplicates(["Branch", "GTM"])
-                .sort_values(["GTM", "Region", "Branch"]))
-    branches["Also written as"] = branches["Branch"].map(
-        lambda b: ", ".join(sorted(k for k, v in BRANCH_ALIASES.items() if v == b)))
-    yearly_given = yearly.rename("Yearly target (given)").reset_index()
+    yearly_r, monthly_r, yearly_given, monthly_given, region = retail_targets(master, sales, year, issues)
+    yearly_p = project_targets(hs, sales, year, issues)
     com = commits(hs, year, issues)
-    if len(com) and len(proj):
+    if len(com) and len(yearly_p):
         # the commit sheet writes some Project branches in capitals (MUM, PUNE); use the target sheet's spelling
-        names = {b.upper(): b for b in proj["Branch"].unique()}
+        names = {b.upper(): b for b in yearly_p["Branch"].unique()}
         p_rows = com["GTM"] == "Project"
         fixed = com.loc[p_rows, "Branch"].map(lambda b: names.get(str(b).upper(), b))
         changed = sorted(set(com.loc[p_rows, "Branch"][fixed != com.loc[p_rows, "Branch"]]))
@@ -507,18 +494,29 @@ def organize(master, qtod, sales, year, hs=None, partner_info=None):
             issues.add("Activity wise Month Target", "Project branch names in capitals: " + ", ".join(changed),
                        "matched to the Project targets' spelling")
         com.loc[p_rows, "Branch"] = fixed
-    tables = {"Branches": branches, "Branch Targets": branch, "Family Targets": fam_all, "Commits": com,
+    monthly_p = project_monthly(com, sales, year, issues, yearly_p)
+    yearly = pd.concat([yearly_r, yearly_p], ignore_index=True)
+    monthly = pd.concat([monthly_r, monthly_p], ignore_index=True)
+    yearly, monthly = yearly[yearly["Target"].round(0) != 0], monthly[monthly["Target"].round(0) != 0]
+    pt, q = partner_targets(qtod, master, sales, year, partner_info, region, issues)
+    pps = partner_product_split(q, sales, year)
+    branches = (pd.concat([yearly[["Branch", "Region", "GTM"]], monthly[["Branch", "Region", "GTM"]]])
+                .drop_duplicates(["Branch", "GTM"]).sort_values(["GTM", "Region", "Branch"]))
+    branches["Also written as"] = branches["Branch"].map(
+        lambda b: ", ".join(sorted(k for k, v in BRANCH_ALIASES.items() if v == b)))
+    tables = {"Branches": branches, "Yearly Targets": yearly, "Monthly Targets": monthly,
               "Partner Targets": pt, "Partner Product Split": pps, "SSP Targets": ssp_targets(master, year, issues),
-              "Region Targets": region_targets(master, issues), "Yearly (given)": yearly_given}
+              "Region Targets": region_targets(master, issues)}
     for k in tables:
-        for c in ("Target", "Target 100%", "Target 108%", "Commit", "OB Commit"):
+        for c in ("Target", "Target 100%", "Target 108%"):
             if c in tables[k]:
                 tables[k][c] = tables[k][c].astype(float).round(0)
-    return tables, pd.DataFrame(issues)
+    given = pd.DataFrame({"Yearly target (given)": yearly_given, "Monthly targets (given, all months)": monthly_given})
+    return tables, pd.DataFrame(issues), given
 
 
 # ====================================================================== workbook
-def write_targets(path, tables, issues, year, base_year):
+def write_targets(path, tables, issues, given, year, base_year):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -532,22 +530,22 @@ def write_targets(path, tables, issues, year, base_year):
     notes = [
         (f"Channel Targets {year}", "Retail, HS (Retail + Project) and Wiser targets in one place, one row per target."),
         ("", ""),
-        ("Source", "Built from 'Master Targets File', 'QTOD and ATOD file' and the HS targets file; split by "
-                   f"{base_year} sales. Column 'Source' says whether a number was given or derived."),
-        ("Amounts", "Rupees. 'Basis' says Net or Gross: branch, monthly, family and SSP targets are Net (gross = net / 0.83); "
-                    "partner targets are Gross; commits are Net (gross = net / 0.87)."),
-        ("Branch Targets", "Year x month x branch x GTM x activity. Yearly target = sum of the months."),
-        ("Family Targets", "Year x month x branch x GTM x product group (Zeta and Wiser as given; the rest split by "
-                           f"{base_year} sales). Adds up to Branch Targets."),
+        ("Source", "Built from 'Master Targets File', 'QTOD and ATOD file' and the HS targets file. Every target is kept "
+                   f"as given and only split over product groups by {base_year} sales; column 'Source' says which."),
+        ("Amounts", "Rupees. 'Basis' says Net or Gross: yearly, monthly and SSP targets are Net (gross = net / 0.83); "
+                    "partner targets are Gross."),
+        ("Yearly Targets", "Year x branch x GTM x product group (activity alongside). Retail: 'Branch Targets'; Project: "
+                           "the HS yearly targets."),
+        ("Monthly Targets", "Month x branch x GTM x product group: the monthly commit. Retail: 'Monthly Targets' (Zeta and "
+                            "Wiser as given); Project: the HS commits. Separate from the yearly target — the months "
+                            "need not add up to it, and months not set yet are empty."),
         ("Partner Targets", "Partner x quarter x family ('All' = the partner's total, as in QTOD)."),
         ("Partner Product Split", "Each partner's yearly target split over product groups by its own "
                                   f"{base_year} mix — for planning, not a given target."),
-        ("Commits", "Activity commitments by branch and month, as given in the HS file."),
         ("SSP Targets", "SSP x branch x year, names as in the sales data."),
         ("Region Targets", "Zone and product targets as given (region level)."),
-        ("Yearly (given)", "The yearly branch targets as given, for checking."),
         ("Issues", "Everything found in the source files and what was done about it."),
-        ("Check", "Totals that must agree; 'Difference' should be 0."),
+        ("Check", "Each sheet against the source file; the 'Difference' columns should be 0."),
         ("Editing", "Add rows at the bottom of a table; keep one row per key; use the dropdowns."),
     ]
     ws.column_dimensions["A"].width, ws.column_dimensions["B"].width = 22, 120
@@ -556,8 +554,7 @@ def write_targets(path, tables, issues, year, base_year):
         ws.cell(r, 2, b).alignment = Alignment(wrap_text=True, vertical="top")
 
     fmt = {"Month": "mmm-yy", "Target": "#,##0", "Target 100%": "#,##0", "Target 108%": "#,##0", "Commit": "#,##0",
-           "OB Commit": "#,##0", "Previous target": "#,##0", "Yearly target (given)": "#,##0", "Difference": "#,##0",
-           "Sum of months": "#,##0", "Sum of product groups": "#,##0", "Sum of quarters": "#,##0"}
+           "OB Commit": "#,##0", "Previous target": "#,##0"}
 
     def sheet(name, df, widths=None):
         w = wb.create_sheet(name)
@@ -595,8 +592,8 @@ def write_targets(path, tables, issues, year, base_year):
                 dv.add(f"{letter}2:{letter}50000")
                 w.add_data_validation(dv)
 
-    order = ["Branches", "Branch Targets", "Family Targets", "Partner Targets", "Partner Product Split", "Commits",
-             "SSP Targets", "Region Targets", "Yearly (given)"]
+    order = ["Branches", "Yearly Targets", "Monthly Targets", "Partner Targets", "Partner Product Split",
+             "SSP Targets", "Region Targets"]
     for name in order:
         df = tables.get(name)
         if df is None or df.empty:
@@ -608,26 +605,23 @@ def write_targets(path, tables, issues, year, base_year):
         for row in w.iter_rows(min_row=2):
             for c in row:
                 c.alignment = Alignment(wrap_text=True, vertical="top")
-    # check: per Retail branch, given yearly vs sum of months vs product groups vs partners
-    bt, ft, pt = tables["Branch Targets"], tables["Family Targets"], tables["Partner Targets"]
-    r = tables["Yearly (given)"].set_index("Branch")["Yearly target (given)"]
-    chk = pd.DataFrame({
-        "Yearly target (given)": r,
-        "Sum of months": bt[bt["GTM"] == "Retail"].groupby("Branch")["Target"].sum(),
-        "Sum of product groups": ft[ft["GTM"] == "Retail"].groupby("Branch")["Target"].sum(),
-        "Partner targets 100% (gross)": pt[pt["Family"] == "All"].groupby("Branch")["Target 100%"].sum(),
-    })
-    chk["Difference"] = (chk["Sum of months"] - chk["Yearly target (given)"]).round(0)
-    chk["Partner coverage (net)"] = chk["Partner targets 100% (gross)"] * 0.83 / chk["Yearly target (given)"]
+    # check: per Retail branch, each sheet against the source file
+    yt, mt, pt = tables["Yearly Targets"], tables["Monthly Targets"], tables["Partner Targets"]
+    chk = given.copy()
+    chk["Yearly Targets sheet"] = yt[yt["GTM"] == "Retail"].groupby("Branch")["Target"].sum()
+    chk["Difference (yearly)"] = (chk["Yearly Targets sheet"] - chk["Yearly target (given)"]).round(0)
+    chk["Monthly Targets sheet"] = mt[mt["GTM"] == "Retail"].groupby("Branch")["Target"].sum()
+    chk["Difference (monthly)"] = (chk["Monthly Targets sheet"] - chk["Monthly targets (given, all months)"]).round(0)
+    chk["Months set"] = mt[mt["GTM"] == "Retail"].groupby("Branch")["Month"].nunique()
+    chk["Months as % of yearly (info)"] = chk["Monthly Targets sheet"] / chk["Yearly target (given)"]
+    chk["Partner targets 100% (gross)"] = pt[pt["Family"] == "All"].groupby("Branch")["Target 100%"].sum()
     chk = chk.reset_index().rename(columns={"index": "Branch"})
     w, cols = sheet("Check", chk, {"Branch": 14})
     for j, c in enumerate(cols, 1):
-        if c == "Partner targets 100% (gross)":
+        f = "0%" if c.startswith("Months as") else ("0" if c == "Months set" else ("#,##0" if c != "Branch" else None))
+        if f:
             for rr in range(2, len(chk) + 2):
-                w.cell(rr, j).number_format = "#,##0"
-        if c == "Partner coverage (net)":
-            for rr in range(2, len(chk) + 2):
-                w.cell(rr, j).number_format = "0%"
+                w.cell(rr, j).number_format = f
     wb.move_sheet("Check", offset=-(len(wb.sheetnames) - 2))
     if "Issues" in wb.sheetnames:
         wb.move_sheet("Issues", offset=-(wb.sheetnames.index("Issues") - 2))
@@ -656,8 +650,8 @@ def main():
     qtod = next(iter(qtod.values()))
     hs = pd.read_excel(a.hs, sheet_name=None) if a.hs else None
     sales = pd.read_parquet(a.sales) if a.sales.endswith(".parquet") else pd.read_pickle(a.sales)
-    tables, issues = organize(master, qtod, sales, a.year, hs)
-    write_targets(f"{a.out_dir}/Channel_Targets_{a.year}.xlsx", tables, issues, a.year, a.year - 1)
+    tables, issues, given = organize(master, qtod, sales, a.year, hs)
+    write_targets(f"{a.out_dir}/Channel_Targets_{a.year}.xlsx", tables, issues, given, a.year, a.year - 1)
     write_contribution(f"{a.out_dir}/Sales_Contribution_{a.year - 1}.xlsx", contribution(prepare_sales(sales), a.year - 1))
     print(f"{len(issues)} issues; sheets: " + ", ".join(f"{k} {len(v)}" for k, v in tables.items()))
 

@@ -20,11 +20,13 @@ HEADER = '''# ══════════════════════
 #   Sales_Contribution_<last year>.xlsx  how last year's sales split by branch,
 #       month, activity, product group, Retail vs Project and partner
 #   Channel_Targets_<year>.xlsx  every target in one long-format workbook for the
-#       Retail, HS and Wiser dashboards, split by last year's sales:
-#       Branch Targets (month × branch × GTM × activity) · Family Targets (product
-#       groups; Zeta / Wiser as given) · Partner Targets (quarters, All / Zeta /
-#       Wiser) · Partner Product Split · Commits · SSP Targets · Region Targets
-#       · Issues (problems found in the source files) · Check (totals agree)
+#       Retail, HS and Wiser dashboards, as given and split over product groups by
+#       last year's sales:
+#       Yearly Targets (year × branch × GTM × product group) · Monthly Targets (the
+#       monthly commit: month × branch × GTM × product group; separate from the
+#       yearly target, months not set stay empty) · Partner Targets (quarters, All /
+#       Zeta / Wiser) · Partner Product Split · SSP Targets · Region Targets
+#       · Issues (problems found in the source files) · Check (sheets vs source)
 # Retail targets are the same rows for the Retail and the HS dashboard.
 # Uses TS (cell 2.5). Source: tableau/targets/organize_targets.py.
 # ════════════════════════════════════════════════════════════════════
@@ -64,11 +66,11 @@ def report_target_split():
     meta["SoldToPartyID"] = meta["SoldToPartyID"].astype(str).str.strip()
     partner_info = {k: {"Branch": b, "RD/KRO": t} for k, b, t in zip(meta["SoldToPartyID"], meta["Branch"], meta["RD/KRO"])}
 
-    tables, issues = TS.organize(master_book, qtod, sales, year, hs, partner_info)
+    tables, issues, given = TS.organize(master_book, qtod, sales, year, hs, partner_info)
     print(f"   🎯 {len(issues)} issue(s) in the target files — see the 'Issues' sheet")
     targets_file = f"Channel_Targets_{year}.xlsx"
     path = os.path.join(OUTPUT_DIR, targets_file)
-    TS.write_targets(path, tables, issues, year, year - 1)
+    TS.write_targets(path, tables, issues, given, year, year - 1)
     print(f"   💾 {path}")
     if TARGET_SPLIT_UPLOAD:
         with open(path, "rb") as fh:

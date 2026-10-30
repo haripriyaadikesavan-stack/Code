@@ -34,27 +34,30 @@ Turns the current Retail target files (`Master Targets File.xlsx`, `QTOD and ATO
 Project together), splitting every target by last year's sales, and writes `Sales_Contribution_<last year>.xlsx`.
 It runs as section 10 of `Channel_Analytics_v9.ipynb`; `notebook_cell.py` generates that cell from this module.
 
-Sheets: **Yearly Targets** (year × branch × GTM × product group) and **Monthly Targets** (the monthly commit:
-month × branch × GTM × product group) — separate, as in the Retail file — plus Partner Targets, Partner Product
-Split, SSP Targets, Region Targets, Issues and Check. (This replaces the Branch / Family Targets and Commits sheets of
-the template above.)
+Sheets: **Yearly Targets** (year × branch × GTM) and **Monthly Targets** (the monthly commit: month × branch × GTM)
+at branch level, **Product Targets Monthly / Yearly** (only products that have a target), Partner Targets, SSP Targets,
+Region Targets, Issues and Check. (This replaces the Branch / Family Targets and Commits sheets of the template above.)
 
-Rules (column `Source` on every row says which applied):
+Rules (column `Source` on every row says where a number comes from):
 
-- **Yearly and monthly are separate targets.** Both are kept exactly as given; the months need not add up to the
-  yearly target, and months without a target yet stay empty — nothing is derived from the yearly target.
-- **Product groups:** each yearly or monthly target is split over product groups by the branch's product mix last
-  year; monthly Miluz Zeta and Wiser are kept as given and only the rest is split. Activities are the sum of their
-  groups.
-- **Project:** yearly targets (HS Branch Targets, by activity) and monthly commits (HS Activity wise Month Target),
-  split over product groups within the activity. The HS file's Retail rows are replaced by the Retail file, so both
-  dashboards show the same Retail targets. Project FD commits and months that repeat the whole yearly target are
-  left out (listed under Issues).
+- **Branch targets as given.** Yearly ('Branch Targets') and monthly ('Monthly Targets', the monthly commit) are
+  separate: the months need not add up to the yearly target, and months without a target yet stay empty.
+- **Product targets only where one exists.** Monthly Miluz Zeta / Wiser from 'Monthly Targets'; 'Product Targets'
+  (region level) shared out to the region's branches by each branch's sales of that product the year before.
+- **Project:** yearly targets (HS Branch Targets) and monthly commits (HS Activity wise Month Target), by activity.
+  The HS file's Retail rows are replaced by the Retail file, so both dashboards show the same Retail targets. Project
+  FD commits and months that repeat the whole yearly target are left out (listed under Issues).
 - **Partners:** QTOD quarters as given (108% = quarter × 1.08); Zeta / Wiser by the partner's quarters.
-  `Partner Product Split` divides each partner's year by its own product mix (its branch's mix below 1 L sales).
 - Branch spellings are aligned with the sales data (PNQ → PUNE, TN2 → TN-2, NCR(DEL+ROH) → NCR ...); partner branches
   come from the partner master.
 
-In Tableau, relate **Yearly Targets** on Target Branch, Target GTM, Target Year, Product Group and **Monthly
-Targets** on Target Branch, Target GTM, Target Month, Product Group (columns written into the dashboard input files
-by notebook cell 2.5).
+In Tableau relate, on the columns notebook cell 2.5 writes into the dashboard input files:
+
+| Sheet | Fields |
+|---|---|
+| Yearly Targets | Target Branch = Branch, Target GTM = GTM, Target Year = Year |
+| Monthly Targets | Target Branch = Branch, Target GTM = GTM, Target Month = Month |
+| Product Targets Monthly | Target Branch, Target GTM, Target Month, Product Group = Product group |
+| Product Targets Yearly | Target Branch, Target GTM, Target Year, Product Group = Product group |
+| Partner Targets | Partner key = Partner Code, Target Year = Year, Target Quarter = Quarter |
+| SSP Targets | Target Branch = Branch, Target Year = Year |

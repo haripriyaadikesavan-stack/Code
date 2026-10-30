@@ -20,13 +20,13 @@ HEADER = '''# ══════════════════════
 #   Sales_Contribution_<last year>.xlsx  how last year's sales split by branch,
 #       month, activity, product group, Retail vs Project and partner
 #   Channel_Targets_<year>.xlsx  every target in one long-format workbook for the
-#       Retail, HS and Wiser dashboards, as given and split over product groups by
-#       last year's sales:
-#       Yearly Targets (year × branch × GTM × product group) · Monthly Targets (the
-#       monthly commit: month × branch × GTM × product group; separate from the
-#       yearly target, months not set stay empty) · Partner Targets (quarters, All /
-#       Zeta / Wiser) · Partner Product Split · SSP Targets · Region Targets
-#       · Issues (problems found in the source files) · Check (sheets vs source)
+#       Retail, HS and Wiser dashboards, as given:
+#       Yearly Targets (year × branch × GTM) · Monthly Targets (the monthly commit,
+#       month × branch × GTM; separate from the yearly target, months not set stay
+#       empty) · Product Targets Monthly / Yearly (only products with a target;
+#       region product targets shared out to branches by last year's sales)
+#       · Partner Targets (quarters, All / Zeta / Wiser) · SSP Targets · Region
+#       Targets · Issues (problems found in the source files) · Check
 # Retail targets are the same rows for the Retail and the HS dashboard.
 # Uses TS (cell 2.5). Source: tableau/targets/organize_targets.py.
 # ════════════════════════════════════════════════════════════════════

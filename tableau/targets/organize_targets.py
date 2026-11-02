@@ -160,6 +160,7 @@ def retail_targets(master, year, issues):
     the months are never derived from the yearly target and need not add up to it."""
     bt = master["Branch Targets"].copy()
     bt["Branch"] = bt["Branch"].map(canon_branch)
+    bt["Target"], bt["Year"] = num(bt["Target"]), num(bt["Year"])
     region = dict(zip(bt["Branch"], bt["Zone"]))
     yearly = bt[bt["Year"] == year].groupby("Branch")["Target"].sum(min_count=1).dropna()
     if bt.loc[bt["Year"] == year - 1, "Target"].isna().all() and (bt["Year"] == year - 1).any():
@@ -260,6 +261,12 @@ def project_targets(hs, sales, year, issues):
     if hs is None or "Branch Targets" not in hs:
         return pd.DataFrame()
     bt = hs["Branch Targets"].copy()
+    bad = bt["Target"].notna() & num(bt["Target"]).isna()
+    if bad.any():
+        issues.add("HS Branch Targets", "targets that are not numbers", "taken as empty",
+                   ", ".join(sorted({str(v) for v in bt.loc[bad, "Target"]}))[:200])
+    bt["Target"] = num(bt["Target"])
+    bt["Year"] = num(bt["Year"])
     rr = bt[(bt["Year"] == year) & (bt["Category"] == "Retail")]
     if len(rr) and rr["Target"].nunique() == 1:
         issues.add("HS Branch Targets", f"every Retail branch has the same {year} target ({rr['Target'].iloc[0]:,.0f})",

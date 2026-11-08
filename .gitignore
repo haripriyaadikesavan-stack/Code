@@ -10,3 +10,7 @@ __pycache__/
 
 # Hyper API logs
 hyperd*.log
+
+# outputs of Channel_Analytics_Dashboard_Reports.ipynb
+Dashboard Reports/
+local_cache_reports/

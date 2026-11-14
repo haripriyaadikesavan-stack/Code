@@ -443,6 +443,20 @@ def region_targets(master, issues):
     return z
 
 
+def overall_and_activity(df):
+    """Branch targets → (overall, by activity).
+    Overall: one row per branch × GTM (× month), no Activity column — Retail as given (its targets are per
+    branch), Project = the sum of its activity targets. By activity: only the rows given per activity
+    (Project COS / SPE / WD ...); Retail has no activity targets, so it has no rows there."""
+    keys = [c for c in ("Year", "Month", "Region", "Branch", "GTM", "Basis") if c in df.columns]
+    act = df[df["Activity"] != "All"].copy()
+    whole = df[df["Activity"] == "All"].drop(columns="Activity")
+    summed = (act.groupby(keys, dropna=False, as_index=False)["Target"].sum()
+              .assign(Source=lambda d: "Sum of activities (" + d["GTM"] + " targets by activity)"))
+    overall = pd.concat([whole, summed], ignore_index=True)[keys[:-1] + ["Target", "Basis", "Source"]]
+    return overall, act.reset_index(drop=True)
+
+
 def organize(master, qtod, sales, year, hs=None, partner_info=None):
     """master / qtod / hs: {sheet: DataFrame} of the target files.
     Returns ({sheet: DataFrame}, issues DataFrame, {name: Series} of source totals for the Check sheet)."""
@@ -472,7 +486,10 @@ def organize(master, qtod, sales, year, hs=None, partner_info=None):
                 .drop_duplicates(["Branch", "GTM"]).sort_values(["GTM", "Region", "Branch"]))
     branches["Also written as"] = branches["Branch"].map(
         lambda b: ", ".join(sorted(k for k, v in BRANCH_ALIASES.items() if v == b)))
-    tables = {"Branches": branches, "Yearly Targets": yearly, "Monthly Targets": monthly,
+    yearly_o, yearly_a = overall_and_activity(yearly)
+    monthly_o, monthly_a = overall_and_activity(monthly)
+    tables = {"Branches": branches, "Yearly Targets": yearly_o, "Monthly Targets": monthly_o,
+              "Yearly Targets by Activity": yearly_a, "Monthly Targets by Activity": monthly_a,
               "Product Targets Monthly": prod_m, "Product Targets Yearly": prod_y,
               "Partner Targets": pt, "SSP Targets": ssp_targets(master, year, issues),
               "Region Targets": region_targets(master, issues)}
@@ -503,11 +520,16 @@ def write_targets(path, tables, issues, given, year, base_year):
                    "given; column 'Source' says where each number comes from."),
         ("Amounts", "Rupees. 'Basis' says Net or Gross: branch, monthly, product and SSP targets are Net "
                     "(gross = net / 0.83); partner targets are Gross."),
-        ("Yearly Targets", "Year x branch x GTM. Retail: 'Branch Targets' (Activity = All); Project: the HS yearly "
-                           "targets by activity."),
-        ("Monthly Targets", "Month x branch x GTM: the monthly commit. Retail: 'Monthly Targets' (Activity = All); "
-                            "Project: the HS commits by activity. Separate from the yearly target — the months need not "
-                            "add up to it, and months not set yet are empty."),
+        ("Yearly Targets", "OVERALL — year x branch x GTM, no activity. Retail: 'Branch Targets'; Project: the sum of "
+                           "the HS yearly targets by activity. Use for overall target vs sales."),
+        ("Monthly Targets", "OVERALL — month x branch x GTM: the monthly commit, no activity. Retail: 'Monthly "
+                            "Targets'; Project: the sum of the HS commits by activity. Separate from the yearly target "
+                            "— the months need not add up to it, and months not set yet are empty."),
+        ("Yearly Targets by Activity", "ACTIVITY-WISE — year x branch x GTM x activity, only where targets are given "
+                                       "per activity (Project: COS / SPE / WD ...). Retail targets are per branch, so "
+                                       "Retail has no rows here."),
+        ("Monthly Targets by Activity", "ACTIVITY-WISE — month x branch x GTM x activity: the HS commits by activity "
+                                        "(Project)."),
         ("Product Targets Monthly", "Month x branch x product group, only where a product target is given "
                                     "(Miluz Zeta and Wiser from 'Monthly Targets')."),
         ("Product Targets Yearly", "Year x branch x product group, from 'Product Targets' (region level), shared out to "
@@ -553,7 +575,7 @@ def write_targets(path, tables, issues, given, year, base_year):
                     w.cell(r, j).number_format = fmt[c]
         return w, cols
 
-    lists = {"GTM": ["Retail", "Project"], "Activity": ["All"] + ACTIVITIES, "Product group": [g for g, _ in GROUPS],
+    lists = {"GTM": ["Retail", "Project"], "Activity": ACTIVITIES, "Product group": [g for g, _ in GROUPS],
              "Family": ["All", "Miluz Zeta", "Wiser"], "Basis": ["Net", "Gross"], "Quarter": list(QUARTERS)}
 
     def dropdowns(w, cols):
@@ -564,7 +586,8 @@ def write_targets(path, tables, issues, given, year, base_year):
                 dv.add(f"{letter}2:{letter}50000")
                 w.add_data_validation(dv)
 
-    order = ["Branches", "Yearly Targets", "Monthly Targets", "Product Targets Monthly", "Product Targets Yearly",
+    order = ["Branches", "Yearly Targets", "Monthly Targets", "Yearly Targets by Activity", "Monthly Targets by Activity",
+             "Product Targets Monthly", "Product Targets Yearly",
              "Partner Targets", "SSP Targets", "Region Targets"]
     for name in order:
         df = tables.get(name)

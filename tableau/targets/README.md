@@ -55,16 +55,17 @@ In Tableau relate, on the columns notebook cell 2.5 writes into the dashboard in
 
 | Sheet | Fields |
 |---|---|
-| Yearly Targets | Target Branch = Branch, Target GTM = GTM, Target Year = Year, Target Activity Key = Activity |
-| Monthly Targets | Target Branch = Branch, Target GTM = GTM, Target Month = Month, Target Activity Key = Activity |
+| Yearly Targets (overall) | Target Branch = Branch, Target GTM = GTM, Target Year = Year |
+| Monthly Targets (overall) | Target Branch = Branch, Target GTM = GTM, Target Month = Month |
+| Yearly Targets by Activity | Target Branch = Branch, Target GTM = GTM, Target Year = Year, Target Activity = Activity |
+| Monthly Targets by Activity | Target Branch = Branch, Target GTM = GTM, Target Month = Month, Target Activity = Activity |
 | Product Targets Monthly | Target Branch, Target GTM, Target Month, Product Group = Product group |
 | Product Targets Yearly | Target Branch, Target GTM, Target Year, Product Group = Product group |
 | Partner Targets | Partner key = Partner Code, Target Year = Year, Target Quarter = Quarter |
 | SSP Targets | Target Branch = Branch, Target Year = Year |
 
-**Activity "All".** Retail targets are given per branch, not per activity, so they have Activity = "All";
-Project targets / commits are per activity (COS, SPE, WD …). The sales column *Target Activity Key* is "All" on
-Retail rows and the activity on Project rows, so every sale meets exactly one target row. In an activity view use
-the **targets sheet's Activity** as the dimension (rows: All = Retail, COS / SPE / WD = Project); sales then sit
-under the same rows. Sales by real activity (Retail WD / FD …) come from *Target Activity* — show those without
-a target column, because Retail has no target per activity.
+**Overall vs activity-wise.** *Yearly / Monthly Targets* are the overall targets: one row per branch × GTM, no
+activity (Retail as given — its targets are per branch; Project = the sum of its activity targets). Use them for
+Retail, Project and HS totals, branch and region views. *… by Activity* hold only targets given per activity
+(Project COS / SPE / WD …); use them for activity-wise target vs sales. Retail has no activity targets, so Retail
+activity rows show sales without a target.

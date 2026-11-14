@@ -488,10 +488,13 @@ def organize(master, qtod, sales, year, hs=None, partner_info=None):
         lambda b: ", ".join(sorted(k for k, v in BRANCH_ALIASES.items() if v == b)))
     yearly_o, yearly_a = overall_and_activity(yearly)
     monthly_o, monthly_a = overall_and_activity(monthly)
+    fam = {"Product group": "Family"}
     tables = {"Branches": branches, "Yearly Targets": yearly_o, "Monthly Targets": monthly_o,
               "Yearly Targets by Activity": yearly_a, "Monthly Targets by Activity": monthly_a,
-              "Product Targets Monthly": prod_m, "Product Targets Yearly": prod_y,
-              "Partner Targets": pt, "SSP Targets": ssp_targets(master, year, issues),
+              "Yearly Targets by Family": prod_y.rename(columns=fam), "Monthly Targets by Family": prod_m.rename(columns=fam),
+              "Partner Targets": pt[pt["Family"] == "All"].drop(columns="Family").reset_index(drop=True),
+              "Partner Targets by Family": pt[pt["Family"] != "All"].reset_index(drop=True),
+              "SSP Targets": ssp_targets(master, year, issues),
               "Region Targets": region_targets(master, issues)}
     for k in tables:
         for c in ("Target", "Target 100%", "Target 108%"):
@@ -530,11 +533,15 @@ def write_targets(path, tables, issues, given, year, base_year):
                                        "Retail has no rows here."),
         ("Monthly Targets by Activity", "ACTIVITY-WISE — month x branch x GTM x activity: the HS commits by activity "
                                         "(Project)."),
-        ("Product Targets Monthly", "Month x branch x product group, only where a product target is given "
-                                    "(Miluz Zeta and Wiser from 'Monthly Targets')."),
-        ("Product Targets Yearly", "Year x branch x product group, from 'Product Targets' (region level), shared out to "
-                                   "the region's branches by each branch's sales of that product the year before."),
-        ("Partner Targets", "Partner x quarter x family ('All' = the partner's total, as in QTOD)."),
+        ("Yearly Targets by Family", "FAMILY-WISE — year x branch x family, from 'Product Targets' (region level), shared "
+                                     "out to the region's branches by each branch's sales of that family the year "
+                                     "before. Only families that have a target get rows. 'Family' is the product group "
+                                     "of the sales data (Unica Pure, Livia, Miluz Zeta, Easy9 6kA, Wiser ...)."),
+        ("Monthly Targets by Family", "FAMILY-WISE — month x branch x family, only where a monthly family target is "
+                                      "given (Miluz Zeta and Wiser from 'Monthly Targets')."),
+        ("Partner Targets", "OVERALL — partner x quarter: the partner's total target, as in QTOD."),
+        ("Partner Targets by Family", "FAMILY-WISE — partner x quarter x family (Miluz Zeta, Wiser): the QTOD yearly "
+                                      "family targets shared over the quarters."),
         ("SSP Targets", "SSP x branch x year, names as in the sales data."),
         ("Region Targets", "Zone targets as given."),
         ("Issues", "Everything found in the source files and what was done about it."),
@@ -575,8 +582,8 @@ def write_targets(path, tables, issues, given, year, base_year):
                     w.cell(r, j).number_format = fmt[c]
         return w, cols
 
-    lists = {"GTM": ["Retail", "Project"], "Activity": ACTIVITIES, "Product group": [g for g, _ in GROUPS],
-             "Family": ["All", "Miluz Zeta", "Wiser"], "Basis": ["Net", "Gross"], "Quarter": list(QUARTERS)}
+    lists = {"GTM": ["Retail", "Project"], "Activity": ACTIVITIES, "Family": [g for g, _ in GROUPS],
+             "Basis": ["Net", "Gross"], "Quarter": list(QUARTERS)}
 
     def dropdowns(w, cols):
         for c, vals in lists.items():
@@ -587,8 +594,8 @@ def write_targets(path, tables, issues, given, year, base_year):
                 w.add_data_validation(dv)
 
     order = ["Branches", "Yearly Targets", "Monthly Targets", "Yearly Targets by Activity", "Monthly Targets by Activity",
-             "Product Targets Monthly", "Product Targets Yearly",
-             "Partner Targets", "SSP Targets", "Region Targets"]
+             "Yearly Targets by Family", "Monthly Targets by Family", "Partner Targets", "Partner Targets by Family",
+             "SSP Targets", "Region Targets"]
     for name in order:
         df = tables.get(name)
         if df is None or df.empty:
@@ -601,7 +608,7 @@ def write_targets(path, tables, issues, given, year, base_year):
             for c in row:
                 c.alignment = Alignment(wrap_text=True, vertical="top")
     # check: per Retail branch, each sheet against the source file
-    yt, mt, pm, pt = (tables[k] for k in ("Yearly Targets", "Monthly Targets", "Product Targets Monthly", "Partner Targets"))
+    yt, mt, pm, pt = (tables[k] for k in ("Yearly Targets", "Monthly Targets", "Monthly Targets by Family", "Partner Targets"))
     chk = given.copy()
     chk["Yearly Targets sheet"] = yt[yt["GTM"] == "Retail"].groupby("Branch")["Target"].sum()
     chk["Difference (yearly)"] = (chk["Yearly Targets sheet"] - chk["Yearly target (given)"]).round(0)
@@ -610,8 +617,8 @@ def write_targets(path, tables, issues, given, year, base_year):
     chk["Months set"] = mt[mt["GTM"] == "Retail"].groupby("Branch")["Month"].nunique()
     chk["Months as % of yearly (info)"] = chk["Monthly Targets sheet"] / chk["Yearly target (given)"]
     for grp in FOCUS.values():
-        chk[f"{grp} (monthly product)"] = pm[pm["Product group"] == grp].groupby("Branch")["Target"].sum()
-    chk["Partner targets 100% (gross)"] = pt[pt["Family"] == "All"].groupby("Branch")["Target 100%"].sum()
+        chk[f"{grp} (monthly family)"] = pm[pm["Family"] == grp].groupby("Branch")["Target"].sum() if len(pm) else np.nan
+    chk["Partner targets 100% (gross)"] = pt.groupby("Branch")["Target 100%"].sum() if len(pt) else np.nan
     chk = chk.reset_index().rename(columns={"index": "Branch"})
     w, cols = sheet("Check", chk, {"Branch": 14})
     for j, c in enumerate(cols, 1):

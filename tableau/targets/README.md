@@ -59,9 +59,10 @@ In Tableau relate, on the columns notebook cell 2.5 writes into the dashboard in
 | Monthly Targets (overall) | Target Branch = Branch, Target GTM = GTM, Target Month = Month |
 | Yearly Targets by Activity | Target Branch = Branch, Target GTM = GTM, Target Year = Year, Target Activity = Activity |
 | Monthly Targets by Activity | Target Branch = Branch, Target GTM = GTM, Target Month = Month, Target Activity = Activity |
-| Product Targets Monthly | Target Branch, Target GTM, Target Month, Product Group = Product group |
-| Product Targets Yearly | Target Branch, Target GTM, Target Year, Product Group = Product group |
-| Partner Targets | Partner key = Partner Code, Target Year = Year, Target Quarter = Quarter |
+| Yearly Targets by Family | Target Branch = Branch, Target GTM = GTM, Target Year = Year, Product Group = Family |
+| Monthly Targets by Family | Target Branch = Branch, Target GTM = GTM, Target Month = Month, Product Group = Family |
+| Partner Targets (overall) | Partner key = Partner Code, Target Year = Year, Target Quarter = Quarter |
+| Partner Targets by Family | Partner key = Partner Code, Target Year = Year, Target Quarter = Quarter, Product Group = Family |
 | SSP Targets | Target Branch = Branch, Target Year = Year |
 
 **Overall vs activity-wise.** *Yearly / Monthly Targets* are the overall targets: one row per branch × GTM, no
@@ -69,3 +70,8 @@ activity (Retail as given — its targets are per branch; Project = the sum of i
 Retail, Project and HS totals, branch and region views. *… by Activity* hold only targets given per activity
 (Project COS / SPE / WD …); use them for activity-wise target vs sales. Retail has no activity targets, so Retail
 activity rows show sales without a target.
+
+**By family.** *Yearly / Monthly Targets by Family* and *Partner Targets by Family* hold only the families that have
+a target (Monthly / partner: Miluz Zeta, Wiser; yearly: the families in 'Product Targets'). 'Family' uses the
+sales data's *Product Group* names (Unica Pure, Livia, AvatarOn, Miluz Zeta, Easy9 6kA …, Wiser), so relate on
+Product Group, not on the material master's Family. Families without a target show sales with no target.

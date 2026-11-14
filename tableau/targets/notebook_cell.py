@@ -101,6 +101,9 @@ KEYS_HEADER = '''# ════════════════════�
 #   Target Month    1st of the invoice month (Sales) or calendar-day month (OB)
 #   Target Year · Target Quarter (Q1–Q4)
 #   Target Activity WD / FD / COS / SPE / EVC (from the Helios code)
+#   Target Activity Key  the Activity of the targets file a sale belongs to:
+#                   "All" for Retail (Retail targets are per branch, not per
+#                   activity), the Target Activity for Project
 #   Product Group   Unica Pure, Livia, AvatarOn, Miluz Zeta, WD- All others,
 #                   Easy9 6kA / 10kA / RCCB / DB, FD- All others, Wiser,
 #                   COS- All others, SPE, EVC
@@ -159,6 +162,7 @@ def add_target_keys(df, gtm=None):
     pairs = pd.DataFrame({"a": out["Target Activity"], "f": family}).drop_duplicates()
     group = {(a, f): TS.product_group(a, f) for a, f in zip(pairs["a"], pairs["f"])}
     out["Product Group"] = [group[k] for k in zip(out["Target Activity"], family)]
+    out["Target Activity Key"] = out["Target Activity"].where(out["Target GTM"] != "Retail", "All")
     out["Partner key"] = partner
     missing = out["Target Branch"].isna() & out["Target GTM"].eq("Retail")
     if missing.any():

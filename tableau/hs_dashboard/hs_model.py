@@ -186,17 +186,17 @@ def build_model(rls_rules, editable=True):
     C("Has activity", "IF {{Is sale in period}} OR {{Is sale in PY period}} OR {{Is OB in period}} OR [Type] = 'Backlog' THEN 1 END", "integer")
     C("Has sales either year", "IF {{Is sale in period}} OR {{Is sale in PY period}} THEN 1 END", "integer")
     C("Has MTD activity", "IF {{Is sale MTD}} OR {{Is sale MTD LY}} OR {{Is OB MTD}} THEN 1 END", "integer")
-    C("Month", "IF MONTH({{Txn date}}) < 10 THEN '0' ELSE '' END + STR(MONTH({{Txn date}})) + ' ' + LEFT(DATENAME('month', {{Txn date}}), 3)", "string")
+    C("Month", "LEFT(DATENAME('month', {{Txn date}}), 3)", "string")
     C("Quarter", "'Q' + STR(DATEPART('quarter', {{Txn date}}))", "string")
     C("Day", "IF DAY({{Txn date}}) < 10 THEN '0' ELSE '' END + STR(DAY({{Txn date}}))", "string")
     C("Partner sales in period (INR)", "{FIXED [SoldToPartyID] : SUM(IF {{Is sale in period}} THEN {{Sales value (INR)}} END)}")
     C("Partner sales PY (INR)", "{FIXED [SoldToPartyID] : SUM(IF {{Is sale in PY period}} THEN {{Sales value (INR)}} END)}")
     C("Partner slab",
       "IF ISNULL({{Partner sales in period (INR)}}) OR {{Partner sales in period (INR)}} <= 0 THEN NULL "
-      "ELSEIF {{Partner sales in period (INR)}} < 100000 THEN '1. Below 1 L' "
-      "ELSEIF {{Partner sales in period (INR)}} < 500000 THEN '2. 1 - 5 L' "
-      "ELSEIF {{Partner sales in period (INR)}} < 2500000 THEN '3. 5 - 25 L' "
-      "ELSEIF {{Partner sales in period (INR)}} < 10000000 THEN '4. 25 L - 1 Cr' ELSE '5. Above 1 Cr' END", "string")
+      "ELSEIF {{Partner sales in period (INR)}} < 100000 THEN 'Below 1 L' "
+      "ELSEIF {{Partner sales in period (INR)}} < 500000 THEN '1 - 5 L' "
+      "ELSEIF {{Partner sales in period (INR)}} < 2500000 THEN '5 - 25 L' "
+      "ELSEIF {{Partner sales in period (INR)}} < 10000000 THEN '25 L - 1 Cr' ELSE 'Above 1 Cr' END", "string")
     C("Partner sales CY (growth lod)", "{FIXED [SoldToPartyID] : SUM({{Sales CY (row)}})}", fmt=FMT_V)
     C("Partner sales PY (growth lod)", "{FIXED [SoldToPartyID] : SUM({{Sales PY (row)}})}", fmt=FMT_V)
     C("Partner growth band",

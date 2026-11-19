@@ -155,16 +155,16 @@ def build_model(rls_rules):
     C("Has activity", "IF {{Is sale in period}} OR {{Is sale in PY period}} OR {{Is OB in period}} OR [Type] = 'Backlog' THEN 1 END", "integer")
     C("Has sales either year", "IF {{Is sale in period}} OR {{Is sale in PY period}} THEN 1 END", "integer")
     C("Has MTD activity", "IF {{Is sale MTD}} OR {{Is sale MTD LY}} OR {{Is OB MTD}} THEN 1 END", "integer")
-    C("Month", "IF MONTH({{Txn date}}) < 10 THEN '0' ELSE '' END + STR(MONTH({{Txn date}})) + ' ' + LEFT(DATENAME('month', {{Txn date}}), 3)", "string")
+    C("Month", "LEFT(DATENAME('month', {{Txn date}}), 3)", "string")
     C("Quarter", "'Q' + STR(DATEPART('quarter', {{Txn date}}))", "string")
     C("Day", "IF DAY({{Txn date}}) < 10 THEN '0' ELSE '' END + STR(DAY({{Txn date}}))", "string")
     C("Partner sales in period (INR)", "{FIXED [SoldToPartyID] : SUM(IF {{Is sale in period}} AND [Family Actual (Sheet1)] = 'Wiser' THEN {{Sales value (INR)}} END)}")
     C("Partner sales PY (INR)", "{FIXED [SoldToPartyID] : SUM(IF {{Is sale in PY period}} AND [Family Actual (Sheet1)] = 'Wiser' THEN {{Sales value (INR)}} END)}")
     C("Partner slab",
       "IF ISNULL({{Partner sales in period (INR)}}) OR {{Partner sales in period (INR)}} <= 0 THEN NULL "
-      "ELSEIF {{Partner sales in period (INR)}} < 25000 THEN '1. Below 25 K' ELSEIF {{Partner sales in period (INR)}} < 100000 THEN '2. 25 K - 1 L' "
-      "ELSEIF {{Partner sales in period (INR)}} < 500000 THEN '3. 1 - 5 L' ELSEIF {{Partner sales in period (INR)}} < 2500000 THEN '4. 5 - 25 L' "
-      "ELSE '5. Above 25 L' END", "string")
+      "ELSEIF {{Partner sales in period (INR)}} < 25000 THEN 'Below 25 K' ELSEIF {{Partner sales in period (INR)}} < 100000 THEN '25 K - 1 L' "
+      "ELSEIF {{Partner sales in period (INR)}} < 500000 THEN '1 - 5 L' ELSEIF {{Partner sales in period (INR)}} < 2500000 THEN '5 - 25 L' "
+      "ELSE 'Above 25 L' END", "string")
     C("Partner growth band",
       "IF ISNULL([SoldToPartyID]) THEN NULL "
       "ELSEIF ZN({{Partner sales PY (INR)}}) <= 0 AND ZN({{Partner sales in period (INR)}}) > 0 THEN '5. New this period (no sales last year)' "
@@ -247,7 +247,7 @@ def build_model(rls_rules):
     C("Problem category", "IFNULL([Category (Processed Data)], 'Unmapped')", "string")
     C("WO in period", "DATE([WO Created Date/Time]) >= {{Period start}} AND DATE([WO Created Date/Time]) <= {{Period end}}", "boolean")
     C("WO in PY period", "DATE([WO Created Date/Time]) >= {{PY start}} AND DATE([WO Created Date/Time]) <= {{PY end}}", "boolean")
-    C("WO month", "IF MONTH([WO Created Date/Time]) < 10 THEN '0' ELSE '' END + STR(MONTH([WO Created Date/Time])) + ' ' + LEFT(DATENAME('month', [WO Created Date/Time]), 3)", "string")
+    C("WO month", "LEFT(DATENAME('month', [WO Created Date/Time]), 3)", "string")
     C("WO (row)", f"IF {{{{WO in period}}}} THEN {WO} END", "string")
     C("WO PY (row)", f"IF {{{{WO in PY period}}}} THEN {WO} END", "string")
     C("Installation WO (row)", f"IF {{{{WO in period}}}} AND {{{{Work order group}}}} = 'Installation' THEN {WO} END", "string")

@@ -86,6 +86,7 @@ class Sheet:
         self.uses, self.extra_fields = [], []
         self.filters, self.slices, self.sorts = [], [], []
         self.manual_sort = ""
+        self.dim_orders = {}        # instance ref -> fixed member order (MANUAL_ORDERS)
         self.rows = self.cols = ""
         self.rows_total = False
         self.cols_total = False
@@ -109,6 +110,9 @@ class Sheet:
         f = self.R[caption_or_field] if isinstance(caption_or_field, str) else caption_or_field
         if (f, kind) not in self.uses:
             self.uses.append((f, kind))
+        order = MANUAL_ORDERS.get(f.caption or f.name)
+        if kind == "dim" and order:
+            self.dim_orders[iref(f, kind)] = order
         return iref(f, kind)
 
     def measures(self, items):
@@ -204,6 +208,15 @@ class Sheet:
         lines = min(4, max(len(textwrap.wrap(n.strip(), per_line, break_long_words=False)) or 1 for n in self.header_names))
         return f"<format attr='height' field='{self.mn}' value='{12 * lines + 14}' />"
 
+    def fixed_orders_xml(self):
+        """Manual sorts for fields in MANUAL_ORDERS (months Jan → Dec, sales slabs low → high),
+        unless the sheet already sorts that field by a measure."""
+        measure_sorted = {m.group(1) for s in self.sorts for m in [re.search(r"dimension-to-sort='([^']+)'", s)] if m}
+        return "".join(f"<manual-sort column='{ref}' direction='ASC'><dictionary>"
+                       + "".join(f"<bucket>{txt(chr(34) + v + chr(34))}</bucket>" for v in order)
+                       + "</dictionary></manual-sort>"
+                       for ref, order in self.dim_orders.items() if ref not in measure_sorted)
+
     # -- XML -------------------------------------------------------------
     def xml(self):
         R = self.R
@@ -232,7 +245,8 @@ class Sheet:
         sorts = ("<shelf-sorts>" + "".join(self.sorts) + "</shelf-sorts>") if self.sorts else ""
         slices = ("<slices>" + "".join(f"<column>{s}</column>" for s in dict.fromkeys(self.slices)) + "</slices>") if self.slices else ""
         view = (f"<view><datasources>{dss}</datasources>{deps}"
-                + "".join(self.filters) + self.manual_sort + sorts + slices + "<aggregation value='true' /></view>")
+                + "".join(self.filters) + self.manual_sort + self.fixed_orders_xml() + sorts + slices
+                + "<aggregation value='true' /></view>")
 
         bg = self.bg
         style = ""
@@ -286,6 +300,18 @@ class Sheet:
         return (f"<worksheet name={attr(self.name)}><layout-options><title><formatted-text>{self.title}</formatted-text></title></layout-options>"
                 f"<table>{view}{style}<panes>{pane}</panes>{rows}{cols}</table>"
                 f"<simple-id uuid='{new_uuid()}' /></worksheet>")
+
+
+# ====================================================================== fixed orders
+# Discrete dimensions whose labels do not sort alphabetically: every sheet that shows one of these
+# fields gets a manual sort in this order (labels without a "01 " / "1. " prefix). Values a dashboard
+# does not have are simply ignored, so one list can serve the Retail, HS and Wiser dashboards.
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+MANUAL_ORDERS = {
+    "Month": MONTHS, "WO month": MONTHS,
+    "Explore by": MONTHS, "Explore across": MONTHS,
+    "Partner slab": ["Below 25 K", "25 K - 1 L", "Below 1 L", "1 - 5 L", "5 - 25 L", "Above 25 L", "25 L - 1 Cr", "Above 1 Cr"],
+}
 
 
 # ====================================================================== builders

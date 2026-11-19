@@ -217,9 +217,9 @@ def build_model(rls_rules, editable=True):
     C("Lapsed partner (row)", "IF (ISNULL({{Partner sales in period (INR)}}) OR {{Partner sales in period (INR)}} <= 0) AND {{Partner sales PY (INR)}} > 0 THEN [SoldToPartyID] END", "string")
     C("Backlog age (days)", "IF [Type] = 'Backlog' THEN DATEDIFF('day', [OrderCreationDate], TODAY()) END", "integer", fmt=FMT_N)
     C("Backlog ageing",
-      "IF [Type] <> 'Backlog' THEN NULL ELSEIF {{Backlog age (days)}} < 20 THEN '1. Under 20 days' "
-      "ELSEIF {{Backlog age (days)}} <= 50 THEN '2. 20-50 days' ELSEIF {{Backlog age (days)}} <= 100 THEN '3. 51-100 days' "
-      "ELSE '4. Over 100 days' END", "string")
+      "IF [Type] <> 'Backlog' THEN NULL ELSEIF {{Backlog age (days)}} < 20 THEN 'Under 20 days' "
+      "ELSEIF {{Backlog age (days)}} <= 50 THEN '20-50 days' ELSEIF {{Backlog age (days)}} <= 100 THEN '51-100 days' "
+      "ELSE 'Over 100 days' END", "string")
     for fam, key in (("Wiser", "Wiser"), ("Miluz Zeta", "Zeta"), ("Miluz Lara", "Lara")):
         C(f"{key} sales CY (row)", f"IF {{{{Is sale in period}}}} AND [Family Actual (Sheet1)] = '{fam}' THEN {{{{Value}}}} END", fmt=FMT_V)
         C(f"{key} sales PY (row)", f"IF {{{{Is sale in PY period}}}} AND [Family Actual (Sheet1)] = '{fam}' THEN {{{{Value}}}} END", fmt=FMT_V)

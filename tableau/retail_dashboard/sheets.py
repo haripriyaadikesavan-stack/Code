@@ -314,6 +314,7 @@ MANUAL_ORDERS = {
     "Partner growth band": ["Growth 25% and above", "Growth 0-25%", "Decline 0-25%", "Decline over 25%",
                             "New this period (no sales last year)", "No sales this period", "No sales either year"],
     "Partner ach band": ["100% and above", "75-100%", "50-75%", "25-50%", "Below 25%", "No sales", "No target"],
+    "Backlog ageing": ["Under 20 days", "20-50 days", "51-100 days", "101-200 days", "Over 100 days", "Over 200 days"],
 }
 
 

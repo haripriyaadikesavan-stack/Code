@@ -183,9 +183,9 @@ def build_model(rls_rules):
     C("Lapsed partner (row)", "IF (ISNULL({{Partner sales in period (INR)}}) OR {{Partner sales in period (INR)}} <= 0) AND {{Partner sales PY (INR)}} > 0 THEN [SoldToPartyID] END", "string")
     C("Backlog age (days)", "IF [Type] = 'Backlog' THEN DATEDIFF('day', [OrderCreationDate], TODAY()) END", "integer", fmt=FMT_N)
     C("Backlog ageing",
-      "IF [Type] <> 'Backlog' THEN NULL ELSEIF {{Backlog age (days)}} < 20 THEN '1. Under 20 days' "
-      "ELSEIF {{Backlog age (days)}} <= 50 THEN '2. 20-50 days' ELSEIF {{Backlog age (days)}} <= 100 THEN '3. 51-100 days' "
-      "ELSEIF {{Backlog age (days)}} <= 200 THEN '4. 101-200 days' ELSE '5. Over 200 days' END", "string")
+      "IF [Type] <> 'Backlog' THEN NULL ELSEIF {{Backlog age (days)}} < 20 THEN 'Under 20 days' "
+      "ELSEIF {{Backlog age (days)}} <= 50 THEN '20-50 days' ELSEIF {{Backlog age (days)}} <= 100 THEN '51-100 days' "
+      "ELSEIF {{Backlog age (days)}} <= 200 THEN '101-200 days' ELSE 'Over 200 days' END", "string")
     C("Retail sales CY (row)", "IF {{GTM}} = 'Retail' THEN {{Sales CY (row)}} END", fmt=FMT_V)
     C("Project sales CY (row)", "IF {{GTM}} = 'Project' THEN {{Sales CY (row)}} END", fmt=FMT_V)
     C("Sale date (row)", "IF [Type] = 'Sales' AND [Gross Sales] > 0 THEN DATE([InvoiceDate]) END", "date")

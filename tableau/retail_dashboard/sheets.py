@@ -311,6 +311,9 @@ MANUAL_ORDERS = {
     "Month": MONTHS, "WO month": MONTHS,
     "Explore by": MONTHS, "Explore across": MONTHS,
     "Partner slab": ["Below 25 K", "25 K - 1 L", "Below 1 L", "1 - 5 L", "5 - 25 L", "Above 25 L", "25 L - 1 Cr", "Above 1 Cr"],
+    "Partner growth band": ["Growth 25% and above", "Growth 0-25%", "Decline 0-25%", "Decline over 25%",
+                            "New this period (no sales last year)", "No sales this period", "No sales either year"],
+    "Partner ach band": ["100% and above", "75-100%", "50-75%", "25-50%", "Below 25%", "No sales", "No target"],
 }
 
 

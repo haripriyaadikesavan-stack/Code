@@ -167,13 +167,13 @@ def build_model(rls_rules):
       "ELSE 'Above 25 L' END", "string")
     C("Partner growth band",
       "IF ISNULL([SoldToPartyID]) THEN NULL "
-      "ELSEIF ZN({{Partner sales PY (INR)}}) <= 0 AND ZN({{Partner sales in period (INR)}}) > 0 THEN '5. New this period (no sales last year)' "
-      "ELSEIF ZN({{Partner sales PY (INR)}}) <= 0 THEN '7. No sales either year' "
-      "ELSEIF ZN({{Partner sales in period (INR)}}) <= 0 THEN '6. No sales this period' "
-      "ELSEIF {{Partner sales in period (INR)}} / {{Partner sales PY (INR)}} - 1 >= 0.25 THEN '1. Growth 25% and above' "
-      "ELSEIF {{Partner sales in period (INR)}} >= {{Partner sales PY (INR)}} THEN '2. Growth 0-25%' "
-      "ELSEIF {{Partner sales in period (INR)}} / {{Partner sales PY (INR)}} - 1 >= -0.25 THEN '3. Decline 0-25%' "
-      "ELSE '4. Decline over 25%' END", "string")
+      "ELSEIF ZN({{Partner sales PY (INR)}}) <= 0 AND ZN({{Partner sales in period (INR)}}) > 0 THEN 'New this period (no sales last year)' "
+      "ELSEIF ZN({{Partner sales PY (INR)}}) <= 0 THEN 'No sales either year' "
+      "ELSEIF ZN({{Partner sales in period (INR)}}) <= 0 THEN 'No sales this period' "
+      "ELSEIF {{Partner sales in period (INR)}} / {{Partner sales PY (INR)}} - 1 >= 0.25 THEN 'Growth 25% and above' "
+      "ELSEIF {{Partner sales in period (INR)}} >= {{Partner sales PY (INR)}} THEN 'Growth 0-25%' "
+      "ELSEIF {{Partner sales in period (INR)}} / {{Partner sales PY (INR)}} - 1 >= -0.25 THEN 'Decline 0-25%' "
+      "ELSE 'Decline over 25%' END", "string")
     for k, lab in ((0, "CY"), (1, "PY"), (2, "PY2")):
         C(f"Partner wiser {lab} (lod)",
           f"{{FIXED [SoldToPartyID] : SUM(IF [Type] = 'Sales' AND [Family Actual (Sheet1)] = 'Wiser' AND YEAR([InvoiceDate]) = {{{{Current year}}}} - {k} THEN [Gross Sales] END)}}")

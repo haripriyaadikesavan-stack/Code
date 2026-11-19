@@ -247,13 +247,13 @@ def build_model(branches, branch_zone, families, rls_rules):
     C("Partner sales PY (growth lod)", "{FIXED [SoldToPartyID] : SUM({{Sales PY (row)}})}", fmt=FMT_V)
     C("Partner growth band",
       "IF ISNULL([SoldToPartyID]) THEN NULL "
-      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 AND ZN({{Partner sales CY (growth lod)}}) > 0 THEN '5. New this period (no sales last year)' "
-      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 THEN '7. No sales either year' "
-      "ELSEIF ZN({{Partner sales CY (growth lod)}}) <= 0 THEN '6. No sales this period' "
-      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= 0.25 THEN '1. Growth 25% and above' "
-      "ELSEIF {{Partner sales CY (growth lod)}} >= {{Partner sales PY (growth lod)}} THEN '2. Growth 0-25%' "
-      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= -0.25 THEN '3. Decline 0-25%' "
-      "ELSE '4. Decline over 25%' END", "string")
+      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 AND ZN({{Partner sales CY (growth lod)}}) > 0 THEN 'New this period (no sales last year)' "
+      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 THEN 'No sales either year' "
+      "ELSEIF ZN({{Partner sales CY (growth lod)}}) <= 0 THEN 'No sales this period' "
+      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= 0.25 THEN 'Growth 25% and above' "
+      "ELSEIF {{Partner sales CY (growth lod)}} >= {{Partner sales PY (growth lod)}} THEN 'Growth 0-25%' "
+      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= -0.25 THEN 'Decline 0-25%' "
+      "ELSE 'Decline over 25%' END", "string")
     C("Backlog age (days)", "IF [Type] = 'Backlog' THEN DATEDIFF('day', [OrderCreationDate], TODAY()) END", "integer", fmt=FMT_N)
     C("Backlog ageing",
       "IF [Type] <> 'Backlog' THEN NULL "
@@ -409,12 +409,12 @@ def build_model(branches, branch_zone, families, rls_rules):
     # partner-level achievement (sales and target meet through the Sold-to Party relationship)
     C("Partner FY ach (lod)", "{FIXED [SoldToPartyID] : ZN(MAX({{Partner sales in period (INR)}})) / {{Units divisor}} / MAX({{Partner FY target (row)}})}", fmt=FMT_P)
     C("Partner ach band",
-      "IF ISNULL({{Partner FY ach (lod)}}) THEN '7. No target' "
-      "ELSEIF {{Partner FY ach (lod)}} >= 1 THEN '1. 100% and above' "
-      "ELSEIF {{Partner FY ach (lod)}} >= 0.75 THEN '2. 75-100%' "
-      "ELSEIF {{Partner FY ach (lod)}} >= 0.5 THEN '3. 50-75%' "
-      "ELSEIF {{Partner FY ach (lod)}} >= 0.25 THEN '4. 25-50%' "
-      "ELSEIF {{Partner FY ach (lod)}} > 0 THEN '5. Below 25%' ELSE '6. No sales' END", "string")
+      "IF ISNULL({{Partner FY ach (lod)}}) THEN 'No target' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 1 THEN '100% and above' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.75 THEN '75-100%' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.5 THEN '50-75%' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.25 THEN '25-50%' "
+      "ELSEIF {{Partner FY ach (lod)}} > 0 THEN 'Below 25%' ELSE 'No sales' END", "string")
 
     # assigned target: flat 25 L (gross) for new partners, else the Partner Targets sheet
     C("Partner FY target (lod)", "{FIXED [SoldToPartyID] : MAX({{Partner FY target (row)}})}", fmt=FMT_V)
@@ -546,7 +546,7 @@ def build_model(branches, branch_zone, families, rls_rules):
     pct("Partner FY Ach %", "{{Sales CY (row)}}", "{{Partner FY target (row)}}")
     A("Partner FY balance", "SUM({{Partner FY target (row)}}) - SUM({{Sales CY (row)}})")
     A("Partners in band", "COUNTD([SoldToPartyID])", "integer", FMT_N)
-    A("Partners at 100%+", "COUNTD(IF {{Partner ach band}} = '1. 100% and above' THEN [SoldToPartyID] END)", "integer", FMT_N)
+    A("Partners at 100%+", "COUNTD(IF {{Partner ach band}} = '100% and above' THEN [SoldToPartyID] END)", "integer", FMT_N)
     A("Partners with target", "COUNTD(IF NOT ISNULL({{Partner FY ach (lod)}}) THEN [SoldToPartyID] END)", "integer", FMT_N)
     A("Pavilions", "COUNTD({{Pavilion partner (row)}})", "integer", FMT_N)
     A("Pavilion target", "SUM({{Pavilion target (row)}})")

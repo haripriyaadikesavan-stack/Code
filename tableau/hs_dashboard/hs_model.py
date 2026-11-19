@@ -201,13 +201,13 @@ def build_model(rls_rules, editable=True):
     C("Partner sales PY (growth lod)", "{FIXED [SoldToPartyID] : SUM({{Sales PY (row)}})}", fmt=FMT_V)
     C("Partner growth band",
       "IF ISNULL([SoldToPartyID]) THEN NULL "
-      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 AND ZN({{Partner sales CY (growth lod)}}) > 0 THEN '5. New this period (no sales last year)' "
-      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 THEN '7. No sales either year' "
-      "ELSEIF ZN({{Partner sales CY (growth lod)}}) <= 0 THEN '6. No sales this period' "
-      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= 0.25 THEN '1. Growth 25% and above' "
-      "ELSEIF {{Partner sales CY (growth lod)}} >= {{Partner sales PY (growth lod)}} THEN '2. Growth 0-25%' "
-      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= -0.25 THEN '3. Decline 0-25%' "
-      "ELSE '4. Decline over 25%' END", "string")
+      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 AND ZN({{Partner sales CY (growth lod)}}) > 0 THEN 'New this period (no sales last year)' "
+      "ELSEIF ZN({{Partner sales PY (growth lod)}}) <= 0 THEN 'No sales either year' "
+      "ELSEIF ZN({{Partner sales CY (growth lod)}}) <= 0 THEN 'No sales this period' "
+      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= 0.25 THEN 'Growth 25% and above' "
+      "ELSEIF {{Partner sales CY (growth lod)}} >= {{Partner sales PY (growth lod)}} THEN 'Growth 0-25%' "
+      "ELSEIF {{Partner sales CY (growth lod)}} / {{Partner sales PY (growth lod)}} - 1 >= -0.25 THEN 'Decline 0-25%' "
+      "ELSE 'Decline over 25%' END", "string")
     for k, lab in ((0, "CY"), (1, "PY"), (2, "PY2")):
         C(f"Partner gross {lab} (lod)",
           f"{{FIXED [SoldToPartyID] : SUM(IF [Type] = 'Sales' AND [HeliosCode] <> 'PREVC' AND YEAR([InvoiceDate]) = {{{{Current year}}}} - {k} THEN [Gross Sales] END)}}")
@@ -306,9 +306,9 @@ def build_model(rls_rules, editable=True):
     C("Partner FY target (row)", "IF [Pivot Field Names] = {{Current year}} THEN [Pivot Field Values] * {{Gross to net (partner)}} / {{Units divisor}} END", fmt=FMT_V)
     C("Partner FY ach (lod)", "{FIXED [SoldToPartyID] : ZN(MAX({{Partner sales in period (INR)}})) / {{Units divisor}} / MAX({{Partner FY target (row)}})}", fmt=FMT_P)
     C("Partner ach band",
-      "IF ISNULL({{Partner FY ach (lod)}}) THEN '7. No target' ELSEIF {{Partner FY ach (lod)}} >= 1 THEN '1. 100% and above' "
-      "ELSEIF {{Partner FY ach (lod)}} >= 0.75 THEN '2. 75-100%' ELSEIF {{Partner FY ach (lod)}} >= 0.5 THEN '3. 50-75%' "
-      "ELSEIF {{Partner FY ach (lod)}} >= 0.25 THEN '4. 25-50%' ELSEIF {{Partner FY ach (lod)}} > 0 THEN '5. Below 25%' ELSE '6. No sales' END", "string")
+      "IF ISNULL({{Partner FY ach (lod)}}) THEN 'No target' ELSEIF {{Partner FY ach (lod)}} >= 1 THEN '100% and above' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.75 THEN '75-100%' ELSEIF {{Partner FY ach (lod)}} >= 0.5 THEN '50-75%' "
+      "ELSEIF {{Partner FY ach (lod)}} >= 0.25 THEN '25-50%' ELSEIF {{Partner FY ach (lod)}} > 0 THEN 'Below 25%' ELSE 'No sales' END", "string")
 
     def rls_expr(field):
         parts = []
@@ -400,7 +400,7 @@ def build_model(rls_rules, editable=True):
     A("Partner FY target", "SUM({{Partner FY target (row)}})")
     pct("Partner FY Ach %", "{{Sales CY (row)}}", "{{Partner FY target (row)}}")
     A("Partners in band", "COUNTD([SoldToPartyID])", "integer", FMT_N)
-    A("Partners at 100%+", "COUNTD(IF {{Partner ach band}} = '1. 100% and above' THEN [SoldToPartyID] END)", "integer", FMT_N)
+    A("Partners at 100%+", "COUNTD(IF {{Partner ach band}} = '100% and above' THEN [SoldToPartyID] END)", "integer", FMT_N)
     A("Partners with target", "COUNTD(IF NOT ISNULL({{Partner FY ach (lod)}}) THEN [SoldToPartyID] END)", "integer", FMT_N)
     A("Average rebate %", "IF SUM(IF {{Is sale in period}} THEN [Gross Sales] END) <> 0 THEN "
       "SUM(IF {{Is sale in period}} THEN [Gross Sales] * {{Rebate rate}} END) / SUM(IF {{Is sale in period}} THEN [Gross Sales] END) END", fmt=FMT_P)

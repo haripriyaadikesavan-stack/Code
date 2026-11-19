@@ -318,8 +318,8 @@ def build_model(branches, branch_zone, families, rls_rules):
       "IF {{Partner new CY}} OR ({{Partner new PY}} AND (MONTH({{Partner first sale PY (lod)}}) >= 10 OR ZN({{Partner gross PY (lod)}}) < 500000)) THEN 'New Partner' "
       "ELSEIF {{Partner new PY}} THEN 'Handholding Partner' ELSE 'Old Partner' END", "string")
     C("FY PY sales bucket",
-      "IF ZN({{Partner gross PY (lod)}}) > 1000000 THEN '1. Above 10 L' ELSEIF ZN({{Partner gross PY (lod)}}) > 500000 THEN '2. 5-10 L' "
-      "ELSEIF ZN({{Partner gross PY (lod)}}) > 0 THEN '3. Below 5 L' ELSE '4. Nil last year' END", "string")
+      "IF ZN({{Partner gross PY (lod)}}) > 1000000 THEN 'Above 10 L' ELSEIF ZN({{Partner gross PY (lod)}}) > 500000 THEN '5-10 L' "
+      "ELSEIF ZN({{Partner gross PY (lod)}}) > 0 THEN 'Below 5 L' ELSE 'Nil last year' END", "string")
     C("Sales FY PY (row)", "IF [Type] = 'Sales' AND YEAR([InvoiceDate]) = {{Current year}} - 1 THEN {{Value}} END", fmt=FMT_V)
     C("New partner sale CY (row)", "IF {{Is sale in period}} AND {{Partner new CY}} THEN {{Value}} END", fmt=FMT_V)
     C("New partner sale PY (row)", "IF {{Is sale in PY period}} AND {{Partner new PY}} THEN {{Value}} END", fmt=FMT_V)

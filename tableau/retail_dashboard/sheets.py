@@ -315,6 +315,7 @@ MANUAL_ORDERS = {
                             "New this period (no sales last year)", "No sales this period", "No sales either year"],
     "Partner ach band": ["100% and above", "75-100%", "50-75%", "25-50%", "Below 25%", "No sales", "No target"],
     "Backlog ageing": ["Under 20 days", "20-50 days", "51-100 days", "101-200 days", "Over 100 days", "Over 200 days"],
+    "FY PY sales bucket": ["Above 10 L", "5-10 L", "Below 5 L", "Nil last year"],
 }
 
 

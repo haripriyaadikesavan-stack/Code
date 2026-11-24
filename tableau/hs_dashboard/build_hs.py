@@ -48,7 +48,9 @@ def add_month_keys(ds):
         e = rel.find("expression")
         s = etree.tostring(e).decode()
         for cat, month in MONTH_KEYS.items():
-            if cat in s and month not in s:
+            if cat in s and month in s:          # rebuilt from a workbook this script made: key already there
+                done += 1
+            elif cat in s:
                 eq = etree.SubElement(e, "expression", op="=")
                 etree.SubElement(eq, "expression", op=TXN_MONTH)
                 etree.SubElement(eq, "expression", op=month)
@@ -67,7 +69,9 @@ def main(src, out, variant="editable"):
     tmp = tempfile.mkdtemp()
     with zipfile.ZipFile(src) as z:
         z.extractall(tmp)
-    tree = etree.parse(os.path.join(tmp, SRC_TWB))
+    # the original source workbook, or a dashboard this script built earlier (rebuilt with its own name)
+    name = SRC_TWB if os.path.exists(os.path.join(tmp, SRC_TWB)) else [f for f in os.listdir(tmp) if f.endswith(".twb")][0]
+    tree = etree.parse(os.path.join(tmp, name))
     root = tree.getroot()
     ds_list = root.find("datasources")
     ds = [d for d in ds_list if d.get("name") == DS][0]

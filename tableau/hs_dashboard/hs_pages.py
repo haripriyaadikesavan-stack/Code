@@ -14,12 +14,13 @@ CHAPTERS = [
     ("Overview", "Overview", "Where HS stands: sales vs last year, yearly target and commit, Retail vs Project, activities."),
     ("Regions", "Regions", "Region-wise performance. Click a region to focus the page on it."),
     ("Branches", "Branches", "Branch scorecard against yearly targets and commits. Click a branch to see its ASMs."),
-    ("Activity", "Activity & Commit", "WD / FD / COS / SPE / EVC: sales and OB against the activity-wise commits."),
     ("Retail/Project", "Retail vs Project", "The two businesses side by side: sales, growth, targets and partners."),
-    ("Products", "Products", "Families, product targets, new products (Wiser, Miluz Zeta, Miluz Lara) and top materials."),
+    ("Products", "Products", "Activities (WD / FD / COS / SPE / EVC) vs commit, families, product targets, new products "
+                             "(Wiser, Miluz Zeta, Miluz Lara) and top materials."),
     ("Partners", "Partners", "Partner base: achievement bands, slabs, tiers, new / revival partners and partners to watch."),
     ("All partners", "All Partners", "Numbers for every partner, and every partner month by month."),
-    ("Monthly", "Monthly Targets", "Monthly targets vs sales and achievement, by month and branch."),
+    ("Monthly", "Monthly Targets", "Monthly targets vs sales and achievement, by month and branch; activity-wise commits "
+                                   "vs sales and OB."),
     ("MTD", "MTD", "This month so far: target, commit, sales, order book and the views of the original MTD dashboard."),
     ("Orders", "Order Book", "Order book, conversion to sales, open backlog and every open order."),
     ("Explore", "Explore", "Any dimension against all measures."),
@@ -27,7 +28,7 @@ CHAPTERS = [
 NAV = [(label, dash) for label, dash, _ in CHAPTERS]
 DASHBOARDS = [dash for _, dash, _ in CHAPTERS]
 NOTES = {dash: note for _, dash, note in CHAPTERS}
-DRILL = {"Regions": ["R | Scorecard"], "Branches": ["B | Scorecard"], "Activity & Commit": ["A | Activity"]}
+DRILL = {"Regions": ["R | Scorecard"], "Branches": ["B | Scorecard"]}
 FILTERS = [("Region", 1, True), ("Branch", 2, True), ("ASM", 3, True), ("Partner", 4, True), ("SoldToPartyID", 5, True),
            ("Activity", 6, False), ("Family", 7, False), ("RD/KRO", 8, True), ("Tier Category", 9, True),
            ("Partner growth band", 10, False)]
@@ -75,7 +76,7 @@ def build_sheets(R):
     add(kpi(R, "K | Sales to OB", "Sales to OB", "Sales to OB %", ("Sales  ", "Sales")))
 
     # ---- story headlines
-    for dash, cap in [("Overview", "Overview"), ("Regions", "Regions"), ("Branches", "Branches"), ("Activity & Commit", "Activity"),
+    for dash, cap in [("Overview", "Overview"), ("Regions", "Regions"), ("Branches", "Branches"),
                       ("Products", "Products"), ("Partners", "Partners"), ("Monthly Targets", "Targets"), ("MTD", "MTD"),
                       ("Order Book", "Orders")]:
         add(story(R, f"H | {dash}", f"Story | {cap}"))
@@ -161,13 +162,13 @@ def build_sheets(R):
     s.nonnull("Decline (agg)")
 
     # ---- All partners
-    add(table(R, "AP | All partners", "All partners", ["Region", "Branch", "ASM", "Partner", "City (Geography mapping)", "RD/KRO",
+    add(table(R, "AP | All partners", "All partners", ["Region", "Branch", "ASM", "RD/KRO", "Partner", "City (Geography mapping)",
                                                        "Tier Category", "Partner status"],
               G + ["Partner FY target", "Partner FY Ach %", "OB", "Backlog", "Days since last sale"],
               sub="Partner targets are gross; Net = gross x 0.83",
-              widths=[55, 75, 130, 250, 95, 45, 55, 90], col_width=72, sort_by="Sales", sort_dims=[3], fit=None), "P", "P")
-    add(matrix(R, "AP | By month", "Partner sales month by month", ["Branch", "Partner"], "Month", "Sales",
-               widths=[75, 260], fit=None), "P", "P")
+              widths=[55, 75, 130, 55, 250, 95, 55, 90], col_width=72, sort_by="Sales", sort_dims=[4], fit=None), "P", "P")
+    add(matrix(R, "AP | By month", "Partner sales month by month", ["Branch", "RD/KRO", "Partner"], "Month", "Sales",
+               widths=[75, 55, 260], fit=None), "P", "P")
 
     # ---- Monthly targets
     add(table(R, "MT | Monthly", "Monthly target vs sales and achievement", ["Month"],
@@ -296,13 +297,11 @@ LAYOUT = {
     "Regions": [H("Regions"), (260, [("R | Scorecard", 1)]), (300, [("R | Trend", 1)]), (250, [("R | Growth heat", 1)]),
                 (230, [("R | Activity", 1)]), (520, [("R | Branches", 1)])],
     "Branches": [H("Branches"), (600, [("B | Scorecard", 1)]), (600, [("B | Activity", 1)]), (520, [("B | ASM table", 1)])],
-    "Activity & Commit": [H("Activity & Commit"), K("K | Commit", "K | OB commit", "K | Sales", "K | Order book"),
-                          (230, [("A | Activity", 1)]), (360, [("A | Monthly commit", 1), ("A | Commit chart", 1)]),
-                          (600, [("A | Branch commit", 1)]), (900, [("A | Branch x activity", 1)])],
     "Retail vs Project": [K("K | Retail", "K | Retail share", "K | Sales", "K | Rebate"), (180, [("GP | GTM", 1)]),
                           (300, [("GP | Trend", 2), ("GP | Activity", 1)]), (230, [("GP | Region", 1)]),
                           (600, [("GP | Branch", 1)])],
-    "Products": [H("Products"), K("K | Sales", "K | Wiser", "K | Zeta", "K | Lara"), (600, [("P | Family table", 1)]),
+    "Products": [H("Products"), K("K | Sales", "K | Wiser", "K | Zeta", "K | Lara"), (230, [("A | Activity", 1)]),
+                 (600, [("P | Family table", 1)]),
                  (420, [("P | Family bars", 1), ("P | Classification", 1)]), (230, [("P | New products", 1)]),
                  (540, [("P | Top SKUs", 1)])],
     "Partners": [H("Partners"), K("K | Partners", "K | Per partner", "K | Lapsed", "K | Quantity"),
@@ -311,7 +310,10 @@ LAYOUT = {
     "All Partners": [(1200, [("AP | All partners", 1)]), (800, [("AP | By month", 1)])],
     "Monthly Targets": [H("Monthly Targets"), K("K | Monthly target", "K | Monthly gap", "K | Sales", "K | Data"),
                         (400, [("MT | Monthly", 1), ("MT | Chart", 1)]), (800, [("MT | Branch x month", 1)]),
-                        (520, [("MT | Focus", 1)])],
+                        (520, [("MT | Focus", 1)]),
+                        K("K | Commit", "K | OB commit", "K | Sales", "K | Order book"),
+                        (360, [("A | Monthly commit", 1), ("A | Commit chart", 1)]),
+                        (600, [("A | Branch commit", 1)]), (900, [("A | Branch x activity", 1)])],
     "MTD": [H("MTD"), (300, [("M | KPIs", 2), ("M | Focus", 2), ("M | Regions", 3)]),
             (300, [("M | Trend", 2), ("M | Leaderboard", 1)]),
             (760, [("swap", 1, ["MV | " + k for k, _ in MTD_VIEWS])])],

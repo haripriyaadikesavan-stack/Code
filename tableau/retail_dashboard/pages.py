@@ -17,7 +17,8 @@ CHAPTERS = [
     ("Products", "Products", "Families, activities (FD / WD ...), new products, classification and top materials."),
     ("Partners", "Partners", "Partner base: achievement bands, slabs, tiers, new / revival partners and partners to watch."),
     ("All partners", "All Partners", "Numbers for every partner, and every partner month by month."),
-    ("New Ptnr/Geo", "New Partner - New Geo", "Policy categories (Old, Handholding, New), new partners by category, region, tier and type, and new cities."),
+    ("N/w Expansion", "Network Expansion", "Network expansion = new and revived partners plus handholding partners (Commercial Policy 2026): "
+                                           "eligibility, pro-rata targets, estimated incentive, region, tier, type and new cities."),
     ("Monthly", "Monthly Targets", "Monthly targets vs sales and achievement."),
     ("Yearly", "Yearly Targets", "Yearly branch targets vs sales, balance and run-rate."),
     ("Partner tgt", "Partner Targets", "Partner target vs achievement: annual, each quarter, Wiser and Zeta (pick in 'Select a View')."),
@@ -326,9 +327,11 @@ def build_sheets(R):
     add(kpi(R, "K | New partners", "New / revival partners", "New partners", ("Their sales  ", "New partner sales CY"), units=False))
     add(kpi(R, "K | Lapsed", "Lapsed partners", "Lapsed partners", ("Active last year  ", "Active partners PY"), units=False))
     add(kpi(R, "K | New share", "New partners' share of sales", "New partner sales %", ("Growth  ", "New partner growth %"), units=False))
-    add(kpi(R, "K | NP partners", "New partners (policy)", "Policy new partners", ("Buying this period  ", "Policy new buying"), units=False))
-    add(kpi(R, "K | NP sales", "New partners' sales", "Policy new sales", ("Share of sales  ", "Policy new share %")))
-    add(kpi(R, "K | NP target", "New partner sales target achieved", "Policy new target Ach %", ("Target  ", "New partner sales target")))
+    add(kpi(R, "K | NP partners", "Network expansion partners", "N/w expansion partners", ("Buying this period  ", "N/w expansion buying"), units=False))
+    add(kpi(R, "K | NP sales", "Network expansion sales", "N/w expansion sales", ("Share of sales  ", "N/w expansion share %")))
+    add(kpi(R, "K | NP target", "Network expansion sales target achieved", "N/w expansion target Ach %", ("Target  ", "New partner sales target")))
+    add(kpi(R, "K | NP eligible", "Partners qualifying for the policy incentive", "Policy-qualified partners",
+            ("Est. incentive  ", "Est. policy incentive"), units=False))
     add(kpi(R, "K | New geo", "New geo cities", "New geo cities", ("Their sales  ", "New geo sales"), units=False))
     add(kpi(R, "K | Monthly target", "Monthly target achieved", "Monthly Ach %", ("Monthly target  ", "Monthly target")))
     add(kpi(R, "K | Monthly gap", "Gap to monthly target", "Gap to monthly target", ("Sales  ", "Sales")))
@@ -435,7 +438,7 @@ def build_sheets(R):
                                                        "Tier Category", "Policy category"],
               ["FY PY sales", "Sales PY", "Sales", "Growth %", "Growth (value)", "Assigned target", "Policy Ach %",
                "Req. monthly run-rate", "OB", "Backlog", "Days since last sale"],
-              sub="Assigned target = the partner's FY target (gross; Net = gross x 0.83); new partners (policy) get a flat 25 L",
+              sub="Assigned target = the partner's FY target (gross; Net = gross x 0.83); new / revived partners without one get 25 L, pro-rata from the month they joined",
               widths=[55, 75, 130, 250, 95, 45, 55, 130], col_width=72, sort_by="Sales", sort_dims=[3], fit=None), "P", "P")
     add(matrix(R, "AP | By month", "Partner sales month by month", ["Branch", "Partner"], "Month", "Sales",
                widths=[75, 260], fit=None), "P", "P")
@@ -443,33 +446,53 @@ def build_sheets(R):
     # ---- Policy tracker
     add(table(R, "PO | Summary", "Policy categories - partners and sales", ["Policy group", "Policy category"],
               ["Partners (count)", "FY PY sales", "Sales PY", "Sales", "Growth %", "Share of sales %"],
-              sub="Old = bought before last year; Handholding = onboarded last year with over 5 L; New = new this year, Q4 last year or under 5 L",
+              sub="Commercial Policy 2026: New = new / revived this year, onboarded Q4 last year or under 5 L last year; "
+                  "Handholding = onboarded last year with 5 L+; Old = the rest",
               widths=[130, 150], nonnull="Has sales (agg)"))
     add(matrix(R, "PO | Buckets", "Handholding and new partners by last year's sales", ["FY PY sales bucket"], "Policy category",
                "Partners (count)", nonnull="Has sales (agg)", widths=[130]))
     S["PO | Buckets"].member_filter("Policy group", ["Handholding Partner", "New Partner"], context=False)
 
-    # ---- New Partner - New Geo: new partners as the policy tracker groups them (this page only)
-    NPSUB = "New partners = policy tracker's New Partner group: new this year, onboarded in Q4 last year, or under 5 L last year"
-    s = add(table(R, "NG | Categories", "New partners by policy category",
-                  ["Policy category"], ["Policy new partners", "Policy new buying", "Policy new sales PY", "Policy new sales",
-                                        "Policy new growth %", "Policy new assigned target", "Policy new Ach %", "Policy new share %",
-                                        "Policy new sales per partner"],
-                  sub=NPSUB + "; assigned target flat 25 L (gross) each", widths=[170], nonnull="Policy new partners"))
-    s.member_filter("Policy group", "New Partner", context=False)
-    s.est_rows = 4                  # the three new-partner categories and the total
-    add(table(R, "NG | Regions", "New partners by region - target vs actual", ["Region"],
-              ["New partner count target", "Policy new buying", "Policy new count Ach %", "New partner sales target", "Policy new sales",
-               "Policy new target Ach %", "Policy new sales PY", "Policy new growth %", "Policy new sales per partner"],
-              sub="Region targets for new partners (count and gross value)", widths=[80], nonnull="Has sales (agg)"))
-    s = add(matrix(R, "NG | Region x category", "New partners' sales by region and policy category", ["Region"], "Policy category",
-                   "Policy new sales", nonnull="Policy new sales", widths=[80]))
-    s.member_filter("Policy group", "New Partner", context=False)
-    NT5 = ["Policy new partners", "Policy new buying", "Policy new sales PY", "Policy new sales", "Policy new growth %"]
-    add(table(R, "NG | Tier", "New partners by tier", ["Tier Category"], NT5, widths=[90], nonnull="Policy new sales"))
-    add(table(R, "NG | Type", "New partners by type", ["RD/KRO"], NT5, widths=[70], nonnull="Policy new sales"))
-    add(matrix(R, "NG | Products", "New partners' sales by activity and region", ["Region"], "Helios Code", "Policy new sales",
-               nonnull="Policy new sales", widths=[80]))
+    # ---- Network Expansion = New Partner group + Handholding partners (Commercial Policy 2026, section 8)
+    NE = ["New Partner", "Handholding Partner"]
+    NESUB = ("Network expansion = new / revived this year, onboarded Q4 last year or under 5 L last year, "
+             "plus handholding partners (onboarded last year, 5 L+)")
+    s = add(table(R, "NG | Categories", "Network expansion by policy category", ["Policy group", "Policy category"],
+                  ["N/w expansion partners", "N/w expansion buying", "N/w expansion sales PY", "N/w expansion sales",
+                   "N/w expansion growth %", "N/w expansion assigned target", "N/w expansion Ach %", "N/w expansion share %",
+                   "N/w expansion sales per partner"],
+                  sub=NESUB + "; assigned target = FY target (25 L if none), pro-rata from the joining month",
+                  widths=[130, 200], nonnull="N/w expansion partners"))
+    s.member_filter("Policy group", NE, context=False)
+    s.est_rows = 7
+    s = add(table(R, "NG | Eligibility", "Commercial Policy eligibility - new partner and handholding incentives",
+                  ["Policy group", "Policy status"], ["N/w expansion partners", "N/w expansion sales", "Est. policy incentive"],
+                  sub="New / revived: 10 L+ in the year, joined by September, target achieved -> 2% of net sales (max 1 L); "
+                      "Handholding: 100% of annual target -> 1% (max 75 K). Estimated on this year's sales",
+                  widths=[130, 230], nonnull="N/w expansion partners"))
+    s.member_filter("Policy group", NE, context=False)
+    s.est_rows = 8
+    add(table(R, "NG | Regions", "Network expansion by region - target vs actual", ["Region"],
+              ["New partner count target", "Policy new buying", "Policy new count Ach %", "New partner sales target", "N/w expansion sales",
+               "N/w expansion target Ach %", "N/w expansion sales PY", "N/w expansion growth %", "N/w expansion sales per partner"],
+              sub="Count target vs new / revived partners buying; sales target vs network expansion sales (with handholding)",
+              widths=[80], nonnull="Has sales (agg)"))
+    s = add(matrix(R, "NG | Region x category", "Network expansion sales by region and policy category", ["Region"], "Policy category",
+                   "N/w expansion sales", nonnull="N/w expansion sales", widths=[80]))
+    s.member_filter("Policy group", NE, context=False)
+    NT5 = ["N/w expansion partners", "N/w expansion buying", "N/w expansion sales PY", "N/w expansion sales", "N/w expansion growth %"]
+    add(table(R, "NG | Tier", "Network expansion by tier", ["Tier Category"], NT5, widths=[90], nonnull="N/w expansion sales"))
+    add(table(R, "NG | Type", "Network expansion by type", ["RD/KRO"], NT5, widths=[70], nonnull="N/w expansion sales"))
+    add(matrix(R, "NG | Products", "Network expansion sales by activity and region", ["Region"], "Helios Code", "N/w expansion sales",
+               nonnull="N/w expansion sales", widths=[80]))
+    s = add(table(R, "NG | Partners", "Network expansion partners - policy status",
+                  ["Region", "Branch", "Partner", "Policy category", "Policy status"],
+                  ["First sale this year", "Assigned target", "Sales this year (gross)", "Policy Ach % (year, gross)", "Sales",
+                   "Est. policy incentive"],
+                  sub="Assigned target in the selected value; achievement and eligibility on this year's gross sales, as the policy",
+                  widths=[60, 80, 230, 190, 210], col_width=80, sort_by="Sales this year (gross)", sort_dims=[2], fit=None,
+                  nonnull="N/w expansion partners"), "P", "P")
+    s.member_filter("Policy group", NE, context=False)
     add(table(R, "NG | Cities", "New geo cities - first sales this year (none in the previous two years)",
               ["Region", "Branch", "City (Geography mapping)"], ["New geo partners", "New geo sales"],
               widths=[70, 90, 160], nonnull="New geo sales", sort_by="New geo sales", sort_dims=[2]))
@@ -738,10 +761,11 @@ LAYOUT = {
                  (280, [("Pa | New partners", 2), ("Pa | Onboarded", 1)]),
                  (300, [("Pa | Top partners", 1)]), (440, [("Pa | Declining", 1)])],
     "All Partners": [H("All Partners"), (1200, [("AP | All partners", 1)]), (800, [("AP | By month", 1)])],
-    "New Partner - New Geo": [K("K | NP partners", "K | NP sales", "K | NP target", "K | New geo"),
-                              (300, [("PO | Summary", 3), ("PO | Buckets", 2)]), (230, [("NG | Categories", 1)]), (270, [("NG | Regions", 1)]),
-                              (270, [("NG | Region x category", 1), ("NG | Tier", 1)]), (200, [("NG | Type", 1)]),
-                              (260, [("NG | Products", 1)]), (520, [("NG | Cities", 1)])],
+    "Network Expansion": [K("K | NP partners", "K | NP sales", "K | NP target", "K | NP eligible", "K | New geo"),
+                          (300, [("PO | Summary", 3), ("PO | Buckets", 2)]), (300, [("NG | Categories", 1)]),
+                          (300, [("NG | Eligibility", 1)]), (270, [("NG | Regions", 1)]),
+                          (270, [("NG | Region x category", 1), ("NG | Tier", 1)]), (200, [("NG | Type", 1)]),
+                          (260, [("NG | Products", 1)]), (700, [("NG | Partners", 1)]), (520, [("NG | Cities", 1)])],
     "Monthly Targets": [H("Monthly Targets"), K("K | Monthly target", "K | Monthly gap", "K | Sales", "K | Data"),
                         (400, [("MT | Monthly", 1), ("MT | Chart", 1)]), (800, [("MT | Branch x month", 1)]),
                         (520, [("MT | Focus", 1)])],

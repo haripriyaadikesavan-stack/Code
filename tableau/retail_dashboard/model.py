@@ -309,14 +309,50 @@ def build_model(branches, branch_zone, families, rls_rules):
       "{FIXED [SoldToPartyID] : MIN(IF [Type] = 'Sales' AND [Helios Code] <> 'PREVC' AND [Gross Sales] > 0 AND YEAR([InvoiceDate]) = {{Current year}} - 1 THEN DATE([InvoiceDate]) END)}", "date")
     C("Partner new CY", "ZN({{Partner gross CY (lod)}}) > 0 AND ZN({{Partner gross PY (lod)}}) = 0 AND ZN({{Partner gross PY2 (lod)}}) = 0 AND [SoldToPartyID] <> '500073231'", "boolean")
     C("Partner new PY", "ZN({{Partner gross PY (lod)}}) > 0 AND ZN({{Partner gross PY2 (lod)}}) = 0 AND ZN({{Partner gross PY3 (lod)}}) = 0 AND [SoldToPartyID] <> '500073231'", "boolean")
+    C("Partner gross before PY2 (lod)",
+      "{FIXED [SoldToPartyID] : SUM(IF [Type] = 'Sales' AND [Helios Code] <> 'PREVC' AND YEAR([InvoiceDate]) < {{Current year}} - 2 THEN [Gross Sales] END)}")
+    C("Partner first sale CY (lod)",
+      "{FIXED [SoldToPartyID] : MIN(IF [Type] = 'Sales' AND [Helios Code] <> 'PREVC' AND [Gross Sales] > 0 AND YEAR([InvoiceDate]) = {{Current year}} THEN DATE([InvoiceDate]) END)}", "date")
+    C("Partner net CY (lod)",
+      "{FIXED [SoldToPartyID] : SUM(IF [Type] = 'Sales' AND [Helios Code] <> 'PREVC' AND YEAR([InvoiceDate]) = {{Current year}} THEN [Net Sales] END)}")
+    # Commercial Policy 2026, section 8: New = started this year, in Q4 last year, or last year with under 5 L;
+    # Revived = no business in the two previous years (counts as New); Handholding = opened last year (5 L+)
     C("Policy category",
-      "IF {{Partner new CY}} THEN 'New Partner ' + STR({{Current year}}) "
+      "IF {{Partner new CY}} AND ZN({{Partner gross before PY2 (lod)}}) > 0 THEN 'Revived Partner ' + STR({{Current year}}) "
+      "ELSEIF {{Partner new CY}} THEN 'New Partner ' + STR({{Current year}}) "
       "ELSEIF {{Partner new PY}} AND MONTH({{Partner first sale PY (lod)}}) >= 10 THEN \"Q4'\" + STR({{Current year}} - 1) + ' Onboarded' "
       "ELSEIF {{Partner new PY}} AND ZN({{Partner gross PY (lod)}}) >= 500000 THEN '>5L ' + STR({{Current year}} - 1) + ' Onboarded' "
       "ELSEIF {{Partner new PY}} THEN '<5L ' + STR({{Current year}} - 1) + ' Onboarded' ELSE 'Old Partner' END", "string")
     C("Policy group",
       "IF {{Partner new CY}} OR ({{Partner new PY}} AND (MONTH({{Partner first sale PY (lod)}}) >= 10 OR ZN({{Partner gross PY (lod)}}) < 500000)) THEN 'New Partner' "
       "ELSEIF {{Partner new PY}} THEN 'Handholding Partner' ELSE 'Old Partner' END", "string")
+    C("Network expansion", "{{Policy group}} = 'New Partner' OR {{Policy group}} = 'Handholding Partner'", "boolean")
+    # pro-rata target: partners joining Feb-Sep get the months left (Jan = full year); after September: not eligible
+    C("Policy months",
+      "IF {{Partner new CY}} THEN (IF MONTH({{Partner first sale CY (lod)}}) > 9 THEN 0 "
+      "ELSE 13 - MONTH({{Partner first sale CY (lod)}}) END) ELSE 12 END", "integer", fmt=FMT_N)
+    C("Partner FY target gross (lod)",
+      "{FIXED [SoldToPartyID] : MAX(IF [Pivot Field Names] = {{Current year}} THEN [Pivot Field Values] END)}")
+    C("Policy target gross (INR)",
+      "IF {{Policy group}} = 'New Partner' THEN IFNULL({{Partner FY target gross (lod)}}, 2500000) * {{Policy months}} / 12 "
+      "ELSE {{Partner FY target gross (lod)}} END")
+    C("Policy ach gross",
+      "IF {{Policy target gross (INR)}} > 0 THEN ZN({{Partner gross CY (lod)}}) / {{Policy target gross (INR)}} END", fmt=FMT_P)
+    C("Policy status",
+      "IF {{Policy group}} = 'New Partner' THEN "
+      "  (IF {{Partner new CY}} AND MONTH({{Partner first sale CY (lod)}}) > 9 THEN 'Not eligible - joined after Sep' "
+      "   ELSEIF ZN({{Partner gross CY (lod)}}) < 1000000 THEN 'Below 10 L minimum' "
+      "   ELSEIF {{Policy ach gross}} >= 1 THEN 'Eligible - target achieved' "
+      "   ELSE 'Eligible - target not yet achieved' END) "
+      "ELSEIF {{Policy group}} = 'Handholding Partner' THEN "
+      "  (IF ISNULL({{Partner FY target gross (lod)}}) THEN 'No target set' "
+      "   ELSEIF {{Policy ach gross}} >= 1 THEN 'Eligible - target achieved' ELSE 'Below 100% of target' END) "
+      "ELSE 'Not applicable' END", "string")
+    # estimated payout: 2% (max 1 L) new / revived, 1% (max 75 K) handholding, on net sales of the year
+    C("Policy incentive (INR)",
+      "IF {{Policy status}} <> 'Eligible - target achieved' THEN 0 "
+      "ELSEIF {{Policy group}} = 'New Partner' THEN MIN(0.02 * ZN({{Partner net CY (lod)}}), 100000) "
+      "ELSE MIN(0.01 * ZN({{Partner net CY (lod)}}), 75000) END")
     C("FY PY sales bucket",
       "IF ZN({{Partner gross PY (lod)}}) > 1000000 THEN 'Above 10 L' ELSEIF ZN({{Partner gross PY (lod)}}) > 500000 THEN '5-10 L' "
       "ELSEIF ZN({{Partner gross PY (lod)}}) > 0 THEN 'Below 5 L' ELSE 'Nil last year' END", "string")
@@ -416,10 +452,10 @@ def build_model(branches, branch_zone, families, rls_rules):
       "ELSEIF {{Partner FY ach (lod)}} >= 0.25 THEN '25-50%' "
       "ELSEIF {{Partner FY ach (lod)}} > 0 THEN 'Below 25%' ELSE 'No sales' END", "string")
 
-    # assigned target: flat 25 L (gross) for new partners, else the Partner Targets sheet
     C("Partner FY target (lod)", "{FIXED [SoldToPartyID] : MAX({{Partner FY target (row)}})}", fmt=FMT_V)
-    C("Policy target (row)",
-      "IF {{Policy group}} = 'New Partner' THEN 2500000 * {{Gross to net}} / {{Units divisor}} ELSE {{Partner FY target (lod)}} END", fmt=FMT_V)
+    # assigned target as the Commercial Policy: the partner's FY target; new / revived partners without one get 25 L;
+    # partners joining during the year get it pro-rata from the month they joined (see Policy months)
+    C("Policy target (row)", "{{Policy target gross (INR)}} * {{Gross to net}} / {{Units divisor}}", fmt=FMT_V)
 
     # ================================================================ pavilion partners (Pavilion Sales sheet)
     C("Pavilion in scope", "[Active/Removed] = 'Active'", "boolean")
@@ -627,11 +663,32 @@ def build_model(branches, branch_zone, families, rls_rules):
     A("Policy new sales PY", "SUM({{Policy new sale PY (row)}})")
     growth("Policy new growth %", "{{Policy new sale CY (row)}}", "{{Policy new sale PY (row)}}")
     pct("Policy new share %", "{{Policy new sale CY (row)}}", "{{Sales CY (row)}}")
-    A("Policy new assigned target", "COUNTD({{Policy new ID (row)}}) * 2500000 * MIN({{Gross to net}}) / MIN({{Units divisor}})")
+    A("Policy new assigned target", "SUM({INCLUDE [SoldToPartyID] : MAX(IF {{Policy group}} = 'New Partner' THEN {{Policy target (row)}} END)})")
     A("Policy new Ach %", "IF {{Policy new assigned target}} > 0 THEN {{Policy new sales}} / {{Policy new assigned target}} END", fmt=FMT_P)
     A("Policy new count Ach %", "IF {{New partner count target}} > 0 THEN {{Policy new buying}} / {{New partner count target}} END", fmt=FMT_P)
     A("Policy new target Ach %", "IF {{New partner sales target}} > 0 THEN {{Policy new sales}} / {{New partner sales target}} END", fmt=FMT_P)
     A("Policy new sales per partner", "IF {{Policy new buying}} > 0 THEN {{Policy new sales}} / {{Policy new buying}} END")
+    # network expansion = New Partner group + Handholding partners (Network Expansion page)
+    C("NE ID (row)", "IF {{Network expansion}} THEN [SoldToPartyID] END", "string")
+    C("NE active (row)", "IF {{Network expansion}} THEN {{Active partner CY (row)}} END", "string")
+    C("NE sale CY (row)", "IF {{Network expansion}} THEN {{Sales CY (row)}} END", fmt=FMT_V)
+    C("NE sale PY (row)", "IF {{Network expansion}} THEN {{Sales PY (row)}} END", fmt=FMT_V)
+    C("NE eligible ID (row)", "IF {{Network expansion}} AND {{Policy status}} = 'Eligible - target achieved' THEN [SoldToPartyID] END", "string")
+    A("N/w expansion partners", "COUNTD({{NE ID (row)}})", "integer", FMT_N)
+    A("N/w expansion buying", "COUNTD({{NE active (row)}})", "integer", FMT_N)
+    A("N/w expansion sales", "SUM({{NE sale CY (row)}})")
+    A("N/w expansion sales PY", "SUM({{NE sale PY (row)}})")
+    growth("N/w expansion growth %", "{{NE sale CY (row)}}", "{{NE sale PY (row)}}")
+    pct("N/w expansion share %", "{{NE sale CY (row)}}", "{{Sales CY (row)}}")
+    A("N/w expansion sales per partner", "IF {{N/w expansion buying}} > 0 THEN {{N/w expansion sales}} / {{N/w expansion buying}} END")
+    A("N/w expansion assigned target", "SUM({INCLUDE [SoldToPartyID] : MAX(IF {{Network expansion}} THEN {{Policy target (row)}} END)})")
+    A("N/w expansion Ach %", "IF {{N/w expansion assigned target}} > 0 THEN {{N/w expansion sales}} / {{N/w expansion assigned target}} END", fmt=FMT_P)
+    A("N/w expansion target Ach %", "IF {{New partner sales target}} > 0 THEN {{N/w expansion sales}} / {{New partner sales target}} END", fmt=FMT_P)
+    A("Policy-qualified partners", "COUNTD({{NE eligible ID (row)}})", "integer", FMT_N)
+    A("Est. policy incentive", "SUM({INCLUDE [SoldToPartyID] : MAX(IF {{Network expansion}} THEN {{Policy incentive (INR)}} END)}) / MIN({{Units divisor}})")
+    A("Policy Ach % (year, gross)", "MAX({{Policy ach gross}})", fmt=FMT_P)
+    A("Sales this year (gross)", "MAX({{Partner gross CY (lod)}}) / MIN({{Units divisor}})")
+    A("First sale this year", "MIN({{Partner first sale CY (lod)}})", "date", fmt=None)
     A("New geo cities", "COUNTD({{New geo city (row)}})", "integer", FMT_N)
     A("New geo partners", "COUNTD({{New geo partner (row)}})", "integer", FMT_N)
     A("New geo sales", "SUM({{New geo sale (row)}})")

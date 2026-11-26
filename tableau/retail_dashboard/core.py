@@ -30,12 +30,17 @@ C_MUTED = "#6b6b6b"
 C_HEAD_BG = "#e9f0ec"
 C_BAND = "#f7f9f8"
 
-# short column headers for the New Partner - New Geo measures (trailing spaces keep them unique)
+# short column headers for the Network Expansion measures (trailing spaces keep them unique)
 NP_ALIASES = {
     "Policy new partners": "New partners ", "Policy new buying": "Buying this period", "Policy new sales": "Sales ",
     "Policy new sales PY": "Sales PY ", "Policy new growth %": "Growth % ", "Policy new share %": "Share of all sales %",
-    "Policy new assigned target": "Assigned target (25 L each)", "Policy new Ach %": "Ach % vs assigned target",
-    "Policy new count Ach %": "Count Ach %", "Policy new target Ach %": "Sales Ach % ", "Policy new sales per partner": "Sales per buying partner",
+    "Policy new assigned target": "Assigned target (pro-rata)", "Policy new Ach %": "Ach % vs assigned target",
+    "Policy new count Ach %": "Count Ach %",
+    "N/w expansion partners": "Partners ", "N/w expansion buying": "Buying this period ", "N/w expansion sales": "Sales  ",
+    "N/w expansion sales PY": "Sales PY  ", "N/w expansion growth %": "Growth %   ", "N/w expansion share %": "Share of all sales % ",
+    "N/w expansion sales per partner": "Sales per buying partner ", "N/w expansion assigned target": "Assigned target (pro-rata) ",
+    "N/w expansion Ach %": "Ach % vs assigned target ", "N/w expansion target Ach %": "Sales Ach %  ",
+    "Est. policy incentive": "Est. incentive", "Policy Ach % (year, gross)": "Ach % (year)", "Policy new target Ach %": "Sales Ach % ", "Policy new sales per partner": "Sales per buying partner",
     # value / quantity crosstabs (Products, Explore)
     "Shown": "This year", "Shown PY": "Last year", "Shown growth %": "Growth %  ",
 }
